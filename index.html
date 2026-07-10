@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; worker-src 'none'">
+<title>函證整理工具</title>
+<style>
+:root {
+  --ink: #172033;
+  --muted: #627087;
+  --line: #d9e1ec;
+  --soft: #f5f7fb;
+  --panel: #ffffff;
+  --accent: #1f6feb;
+  --accent-strong: #1759c7;
+  --green: #138a54;
+  --red: #c93636;
+  --amber: #b7791f;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Microsoft JhengHei", "Segoe UI", Arial, sans-serif;
+  background: #eef2f7;
+  color: var(--ink);
+}
+.shell {
+  width: min(1440px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 22px 0 36px;
+}
+header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 12px 0 18px;
+}
+h1 {
+  margin: 0;
+  font-size: 30px;
+  letter-spacing: 0;
+}
+.subtitle {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.workspace {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 16px;
+}
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(18, 31, 52, 0.06);
+}
+.left {
+  padding: 18px;
+  align-self: start;
+}
+.drop {
+  min-height: 168px;
+  border: 2px dashed #9fb0c7;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  background: #f8fafd;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.drop:hover,
+.drop.drag {
+  border-color: var(--accent);
+  background: #edf5ff;
+}
+.drop strong {
+  display: block;
+  font-size: 17px;
+  margin-bottom: 8px;
+}
+.drop span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+input[type="file"] { display: none; }
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+button {
+  border: 0;
+  border-radius: 6px;
+  min-height: 42px;
+  padding: 0 14px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+.primary { background: var(--accent); color: #fff; }
+.primary:hover:not(:disabled) { background: var(--accent-strong); }
+.secondary {
+  background: #eef3f9;
+  color: #243247;
+  border: 1px solid var(--line);
+}
+.success { background: var(--green); color: #fff; grid-column: 1 / -1; }
+.file-list {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+.file {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.remove {
+  color: var(--red);
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.status {
+  min-height: 22px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.status.ok { color: var(--green); }
+.status.warn { color: var(--amber); }
+.status.err { color: var(--red); }
+.summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.metric {
+  min-height: 76px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+.metric span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+.metric strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 26px;
+}
+.tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 0 14px;
+}
+.tab {
+  height: 46px;
+  padding: 0 18px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  border-bottom: 3px solid transparent;
+}
+.tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.content { padding: 14px; }
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.search {
+  width: min(340px, 100%);
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 10px;
+  font: inherit;
+}
+.table-wrap {
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  max-height: 66vh;
+  background: #fff;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 980px;
+  font-size: 13px;
+}
+th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #243247;
+  color: #fff;
+  padding: 9px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+td {
+  border-top: 1px solid var(--line);
+  padding: 8px;
+  vertical-align: top;
+}
+tr:nth-child(even) td { background: #fafcff; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.center { text-align: center; }
+.empty {
+  display: grid;
+  place-items: center;
+  min-height: 320px;
+  color: var(--muted);
+  text-align: center;
+  padding: 24px;
+}
+.note {
+  margin-top: 14px;
+  padding: 12px;
+  background: #fff7e6;
+  border: 1px solid #f1d39a;
+  border-radius: 8px;
+  color: #744b12;
+  font-size: 13px;
+  line-height: 1.7;
+}
+@media (max-width: 980px) {
+  header { display: block; }
+  .badge { margin-top: 12px; }
+  .workspace { grid-template-columns: 1fr; }
+  .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .shell { width: min(100vw - 18px, 1440px); }
+  h1 { font-size: 24px; }
+  .summary { grid-template-columns: 1fr; }
+  .actions { grid-template-columns: 1fr; }
+  .success { grid-column: auto; }
+  .tabs { overflow-x: auto; padding: 0 8px; }
+  .tab { padding: 0 12px; white-space: nowrap; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div>
+      <h1>函證整理工具</h1>
+      <p class="subtitle">匯入銀行函證 Excel，整理成存款、借款與其他項目，並輸出彙總工作簿。</p>
+    </div>
+    <div class="badge">純瀏覽器處理｜檔案不離開本機</div>
+  </header>
+
+  <main class="workspace">
+    <section class="panel left">
+      <label class="drop" id="dropZone">
+        <input id="fileInput" type="file" accept=".xlsx,.xls,.csv" multiple>
+        <span>
+          <strong>拖曳或點選選擇函證檔</strong>
+          支援 .xlsx / .xls / .csv<br>
+          建議使用銀行電子函證匯出的 Excel
+        </span>
+      </label>
+      <div class="file-list" id="fileList"></div>
+      <div class="actions">
+        <button class="primary" id="btnParse" disabled>整理函證</button>
+        <button class="secondary" id="btnClear" disabled>清除</button>
+        <button class="success" id="btnDownload" disabled>下載整理後 Excel</button>
+      </div>
+      <div class="status" id="status">等待匯入檔案。</div>
+      <div class="note">
+        目前邏輯是讀取 Excel 儲存格並依關鍵字辨識欄位。若來源是 PDF，需另外加入 PDF 文字抽取或 OCR，才能穩定整理。
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="summary">
+        <div class="metric"><span>檔案數</span><strong id="mFiles">0</strong></div>
+        <div class="metric"><span>存款筆數</span><strong id="mDeposits">0</strong></div>
+        <div class="metric"><span>借款筆數</span><strong id="mLoans">0</strong></div>
+        <div class="metric"><span>其他筆數</span><strong id="mOther">0</strong></div>
+      </div>
+      <div class="tabs">
+        <button class="tab active" data-tab="deposits">存款明細</button>
+        <button class="tab" data-tab="loans">借款明細</button>
+        <button class="tab" data-tab="other">其他項目</button>
+        <button class="tab" data-tab="logs">辨識紀錄</button>
+      </div>
+      <div class="content">
+        <div class="toolbar">
+          <input class="search" id="filterInput" placeholder="搜尋銀行、帳號、幣別、備註">
+          <span class="status" id="viewStatus"></span>
+        </div>
+        <div id="tableHost" class="table-wrap"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="assets/xlsx.full.min.js"></script>
+<script src="assets/exceljs.min.js"></script>
+<script>
+const fileInput = document.getElementById('fileInput');
+const dropZone = document.getElementById('dropZone');
+const fileList = document.getElementById('fileList');
+const btnParse = document.getElementById('btnParse');
+const btnClear = document.getElementById('btnClear');
+const btnDownload = document.getElementById('btnDownload');
+const statusEl = document.getElementById('status');
+const filterInput = document.getElementById('filterInput');
+const tableHost = document.getElementById('tableHost');
+const viewStatus = document.getElementById('viewStatus');
+
+let uploadedFiles = [];
+let activeTab = 'deposits';
+let data = emptyData();
+
+function emptyData() {
+  return { deposits: [], loans: [], other: [], logs: [], fileCount: 0 };
+}
+
+function clean(v) {
+  if (v === null || v === undefined) return '';
+  return String(v).replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function amount(v) {
+  const s = clean(v).replace(/,/g, '').replace(/[()]/g, '-');
+  const n = Number(s);
+  return Number.isFinite(n) ? n : '';
+}
+
+function normalizedCurrency(v) {
+  const s = clean(v).toUpperCase();
+  if (!s) return '';
+  if (['NT', 'NTD', 'TWD', '台幣', '臺幣', '新台幣', '新臺幣'].includes(s)) return 'TWD';
+  return s;
+}
+
+function normalizeDate(v) {
+  const s = clean(v);
+  if (!s) return '';
+  const excelDate = Number(s);
+  if (Number.isFinite(excelDate) && excelDate > 20000 && excelDate < 80000) {
+    const d = XLSX.SSF.parse_date_code(excelDate);
+    if (d) return `${d.y}/${String(d.m).padStart(2, '0')}/${String(d.d).padStart(2, '0')}`;
+  }
+  return s.replaceAll('-', '/');
+}
+
+function addFiles(files) {
+  for (const file of files) {
+    const name = file.name.toLowerCase();
+    if (!name.endsWith('.xlsx') && !name.endsWith('.xls') && !name.endsWith('.csv')) continue;
+    if (!uploadedFiles.some(f => f.name === file.name && f.size === file.size)) uploadedFiles.push(file);
+  }
+  renderFiles();
+}
+
+function renderFiles() {
+  fileList.innerHTML = uploadedFiles.map((file, index) => `
+    <div class="file">
+      <span>${escapeHtml(file.name)}</span>
+      <span class="remove" data-index="${index}" aria-label="移除">×</span>
+    </div>
+  `).join('');
+  fileList.querySelectorAll('.remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      uploadedFiles.splice(Number(btn.dataset.index), 1);
+      renderFiles();
+    });
+  });
+  btnParse.disabled = uploadedFiles.length === 0;
+  btnClear.disabled = uploadedFiles.length === 0 && data.fileCount === 0;
+  document.getElementById('mFiles').textContent = uploadedFiles.length || data.fileCount;
+}
+
+function escapeHtml(s) {
+  return clean(s).replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('drag');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag');
+  addFiles(e.dataTransfer.files);
+});
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => {
+  addFiles(fileInput.files);
+  fileInput.value = '';
+});
+
+btnClear.addEventListener('click', () => {
+  uploadedFiles = [];
+  data = emptyData();
+  status('等待匯入檔案。');
+  btnDownload.disabled = true;
+  renderFiles();
+  updateMetrics();
+  renderTable();
+});
+
+btnParse.addEventListener('click', async () => {
+  if (!uploadedFiles.length) return;
+  status('整理中...');
+  btnParse.disabled = true;
+  data = emptyData();
+  for (const file of uploadedFiles) {
+    try {
+      const rows = await readRows(file);
+      parseRows(rows, file.name, data);
+      data.fileCount++;
+    } catch (err) {
+      data.logs.push({ file: file.name, type: '讀取失敗', message: err.message });
+    }
+  }
+  dedupeRows();
+  updateMetrics();
+  renderTable();
+  btnDownload.disabled = data.deposits.length + data.loans.length + data.other.length === 0;
+  const total = data.deposits.length + data.loans.length + data.other.length;
+  status(total ? `整理完成，共辨識 ${total} 筆資料。` : '沒有辨識到明細，請確認函證格式或改用手動欄位對應。', total ? 'ok' : 'warn');
+  btnParse.disabled = uploadedFiles.length === 0;
+});
+
+async function readRows(file) {
+  const buffer = await file.arrayBuffer();
+  const wb = XLSX.read(new Uint8Array(buffer), { type: 'array', cellDates: true, raw: false });
+  const allRows = [];
+  for (const sheetName of wb.SheetNames) {
+    const ws = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+    rows.forEach((row, idx) => allRows.push({ sheet: sheetName, index: idx + 1, cells: row.map(clean) }));
+  }
+  return allRows;
+}
+
+function parseRows(rows, fileName, target) {
+  const meta = inferMeta(rows);
+  const tables = findTables(rows);
+  if (!tables.length) {
+    target.logs.push({ file: fileName, type: '未找到表格', message: '沒有偵測到含帳號、幣別、金額或餘額的表頭列。' });
+    return;
+  }
+  for (const table of tables) {
+    const section = classifySection(table.title);
+    const mapped = mapHeaders(table.headers);
+    if (section === 'deposit') parseDetailRows(table.rows, mapped, meta, fileName, target.deposits, 'deposit');
+    else if (section === 'loan') parseDetailRows(table.rows, mapped, meta, fileName, target.loans, 'loan');
+    else parseDetailRows(table.rows, mapped, meta, fileName, target.other, 'other');
+    target.logs.push({
+      file: fileName,
+      type: sectionName(section),
+      message: `${table.sheet} 第 ${table.headerRow} 列起，讀取 ${table.rows.length} 列`
+    });
+  }
+}
+
+function inferMeta(rows) {
+  const meta = { companyId: '', companyName: '', bank: '', branch: '', baseDate: '' };
+  const flat = rows.slice(0, 30).map(r => r.cells);
+  for (const cells of flat) {
+    cells.forEach((cell, i) => {
+      const next = clean(cells[i + 1]);
+      const joined = clean(cells.slice(i, i + 4).join(' '));
+      if (!meta.companyId && /統一編號|營利事業統一編號/.test(cell)) meta.companyId = next || extractAfterColon(cell);
+      if (!meta.companyName && /公司名稱|客戶名稱|受函證者/.test(cell)) meta.companyName = next || extractAfterColon(cell);
+      if (!meta.bank && /銀行名稱|金融機構|銀行別/.test(cell)) meta.bank = next || extractAfterColon(cell);
+      if (!meta.branch && /分行|分支機構/.test(cell)) meta.branch = next || extractAfterColon(cell);
+      if (!meta.baseDate && /基準日|函證日|查核日期/.test(cell)) meta.baseDate = normalizeDate(next || extractAfterColon(cell));
+      if (!meta.baseDate) {
+        const m = joined.match(/(20\d{2}[\/.-]\d{1,2}[\/.-]\d{1,2})/);
+        if (m) meta.baseDate = normalizeDate(m[1]);
+      }
+    });
+  }
+  return meta;
+}
+
+function extractAfterColon(s) {
+  const parts = clean(s).split(/[:：]/);
+  return parts.length > 1 ? clean(parts.slice(1).join(':')) : '';
+}
+
+function findTables(rows) {
+  const tables = [];
+  for (let i = 0; i < rows.length; i++) {
+    const text = rows[i].cells.join(' ');
+    if (!isHeaderRow(rows[i].cells)) continue;
+    const title = findRecentTitle(rows, i);
+    const headers = rows[i].cells;
+    const detailRows = [];
+    for (let j = i + 1; j < rows.length; j++) {
+      if (rows[j].sheet !== rows[i].sheet) break;
+      const rowText = rows[j].cells.join('');
+      if (!rowText) {
+        if (detailRows.length) break;
+        continue;
+      }
+      if (j > i + 1 && isHeaderRow(rows[j].cells)) break;
+      if (/合計|總計/.test(rowText) && detailRows.length) break;
+      detailRows.push(rows[j].cells);
+    }
+    if (detailRows.length) {
+      tables.push({ sheet: rows[i].sheet, headerRow: rows[i].index, title, headers, rows: detailRows });
+      i += detailRows.length;
+    } else if (/存款|借款|保證|票據|衍生|擔保|押匯/.test(text)) {
+      tables.push({ sheet: rows[i].sheet, headerRow: rows[i].index, title, headers, rows: [] });
+    }
+  }
+  return tables;
+}
+
+function isHeaderRow(cells) {
+  const text = cells.join(' ');
+  const hasAccount = /帳號|账号|科目|種類|存款別|放款別|項目/.test(text);
+  const hasMoney = /金額|餘額|余额|幣別|币别|本金|原幣/.test(text);
+  return hasAccount && hasMoney;
+}
+
+function findRecentTitle(rows, idx) {
+  for (let i = idx; i >= Math.max(0, idx - 5); i--) {
+    const text = rows[i].cells.join(' ');
+    if (/存款|借款|放款|保證|票據|其他|衍生|擔保|押匯/.test(text)) return text;
+  }
+  return rows[idx].cells.join(' ');
+}
+
+function classifySection(title) {
+  if (/借款|放款|貸款|贷款|融資|透支/.test(title)) return 'loan';
+  if (/存款|活期|支票|定期|定存/.test(title)) return 'deposit';
+  return 'other';
+}
+
+function sectionName(section) {
+  return section === 'deposit' ? '存款表' : section === 'loan' ? '借款表' : '其他表';
+}
+
+function mapHeaders(headers) {
+  const map = {};
+  headers.forEach((h, index) => {
+    const key = clean(h);
+    if (/銀行|金融機構/.test(key)) map.bank = index;
+    if (/分行|分支/.test(key)) map.branch = index;
+    if (/存款別|放款別|種類|類別|科目|項目/.test(key)) map.kind = index;
+    if (/帳號|账号/.test(key)) map.account = index;
+    if (/幣別|币别|幣種|币种/.test(key)) map.currency = index;
+    if (/餘額|余额|金額|本金|原幣|本息/.test(key)) map.amount = index;
+    if (/利率|年息/.test(key)) map.rate = index;
+    if (/起日|借款日|放款日|貸放日/.test(key)) map.startDate = index;
+    if (/到期日|訖日|截止日/.test(key)) map.endDate = index;
+    if (/限制|質押|擔保|抵押/.test(key)) map.restriction = index;
+    if (/備註|說明/.test(key)) map.note = index;
+  });
+  return map;
+}
+
+function parseDetailRows(rows, map, meta, fileName, bucket, type) {
+  rows.forEach(row => {
+    const rowText = row.join(' ');
+    if (!rowText || /合計|總計|小計/.test(rowText)) return;
+    const amt = map.amount !== undefined ? amount(row[map.amount]) : findLikelyAmount(row);
+    const account = map.account !== undefined ? clean(row[map.account]) : findLikelyAccount(row);
+    if (!account && amt === '') return;
+    const bank = clean(row[map.bank]) || meta.branch || meta.bank || guessBankFromFile(fileName);
+    const common = {
+      source: fileName,
+      companyId: meta.companyId,
+      companyName: meta.companyName,
+      bank,
+      kind: clean(row[map.kind]) || '',
+      account,
+      currency: normalizedCurrency(row[map.currency]) || 'TWD',
+      amount: amt,
+      note: clean(row[map.note]) || '',
+      raw: rowText
+    };
+    if (type === 'loan') {
+      bucket.push({
+        ...common,
+        startDate: normalizeDate(row[map.startDate]),
+        endDate: normalizeDate(row[map.endDate]),
+        interestRate: clean(row[map.rate]) || '',
+        collateral: clean(row[map.restriction]) || ''
+      });
+    } else if (type === 'deposit') {
+      bucket.push({
+        ...common,
+        restriction: clean(row[map.restriction]) || ''
+      });
+    } else {
+      bucket.push(common);
+    }
+  });
+}
+
+function findLikelyAmount(row) {
+  for (let i = row.length - 1; i >= 0; i--) {
+    const n = amount(row[i]);
+    if (n !== '') return n;
+  }
+  return '';
+}
+
+function findLikelyAccount(row) {
+  const hit = row.find(cell => /\d{5,}/.test(clean(cell).replace(/[-\s]/g, '')));
+  return clean(hit);
+}
+
+function guessBankFromFile(name) {
+  return clean(name).replace(/\.(xlsx|xls|csv)$/i, '');
+}
+
+function dedupeRows() {
+  ['deposits', 'loans', 'other'].forEach(key => {
+    const seen = new Set();
+    data[key] = data[key].filter(row => {
+      const id = [row.bank, row.kind, row.account, row.currency, row.amount, row.source].join('|');
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  });
+}
+
+function updateMetrics() {
+  document.getElementById('mFiles').textContent = data.fileCount || uploadedFiles.length;
+  document.getElementById('mDeposits').textContent = data.deposits.length;
+  document.getElementById('mLoans').textContent = data.loans.length;
+  document.getElementById('mOther').textContent = data.other.length;
+  btnClear.disabled = uploadedFiles.length === 0 && data.fileCount === 0;
+}
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    activeTab = tab.dataset.tab;
+    renderTable();
+  });
+});
+filterInput.addEventListener('input', renderTable);
+
+function renderTable() {
+  const rows = currentRows().filter(row => JSON.stringify(row).toLowerCase().includes(filterInput.value.toLowerCase()));
+  viewStatus.textContent = rows.length ? `顯示 ${rows.length} 筆` : '';
+  if (!rows.length) {
+    tableHost.className = 'empty';
+    tableHost.innerHTML = '尚無資料。';
+    return;
+  }
+  tableHost.className = 'table-wrap';
+  if (activeTab === 'logs') return renderLogs(rows);
+  const columns = columnsFor(activeTab);
+  tableHost.innerHTML = `
+    <table>
+      <thead><tr>${columns.map(c => `<th>${c.label}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map(row => `<tr>${columns.map(c => cellHtml(row, c)).join('')}</tr>`).join('')}</tbody>
+    </table>
+  `;
+}
+
+function currentRows() {
+  if (activeTab === 'deposits') return data.deposits;
+  if (activeTab === 'loans') return data.loans;
+  if (activeTab === 'other') return data.other;
+  return data.logs;
+}
+
+function columnsFor(tab) {
+  if (tab === 'deposits') return [
+    { key: 'bank', label: '銀行別' }, { key: 'kind', label: '存款別' }, { key: 'account', label: '帳號' },
+    { key: 'currency', label: '幣別', cls: 'center' }, { key: 'amount', label: '回函金額', cls: 'num', money: true },
+    { key: 'restriction', label: '限制情形' }, { key: 'note', label: '備註' }, { key: 'source', label: '來源檔' }
+  ];
+  if (tab === 'loans') return [
+    { key: 'bank', label: '銀行別' }, { key: 'kind', label: '放款別' }, { key: 'account', label: '帳號' },
+    { key: 'startDate', label: '放款日' }, { key: 'endDate', label: '到期日' },
+    { key: 'currency', label: '幣別', cls: 'center' }, { key: 'amount', label: '回函金額', cls: 'num', money: true },
+    { key: 'interestRate', label: '利率' }, { key: 'collateral', label: '擔保/抵押' }, { key: 'note', label: '備註' }, { key: 'source', label: '來源檔' }
+  ];
+  return [
+    { key: 'bank', label: '銀行別' }, { key: 'kind', label: '項目' }, { key: 'account', label: '帳號/編號' },
+    { key: 'currency', label: '幣別', cls: 'center' }, { key: 'amount', label: '金額', cls: 'num', money: true },
+    { key: 'note', label: '備註' }, { key: 'source', label: '來源檔' }
+  ];
+}
+
+function cellHtml(row, col) {
+  let value = row[col.key] ?? '';
+  if (col.money && value !== '') value = Number(value).toLocaleString('zh-TW');
+  return `<td class="${col.cls || ''}">${escapeHtml(value)}</td>`;
+}
+
+function renderLogs(rows) {
+  tableHost.innerHTML = `
+    <table>
+      <thead><tr><th>檔案</th><th>類型</th><th>說明</th></tr></thead>
+      <tbody>${rows.map(row => `<tr><td>${escapeHtml(row.file)}</td><td>${escapeHtml(row.type)}</td><td>${escapeHtml(row.message)}</td></tr>`).join('')}</tbody>
+    </table>
+  `;
+}
+
+function status(message, tone = '') {
+  statusEl.textContent = message;
+  statusEl.className = `status ${tone}`;
+}
+
+btnDownload.addEventListener('click', async () => {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = '函證整理工具';
+  workbook.created = new Date();
+  addSheet(workbook, '存款明細', data.deposits, columnsFor('deposits'));
+  addSheet(workbook, '借款明細', data.loans, columnsFor('loans'));
+  addSheet(workbook, '其他項目', data.other, columnsFor('other'));
+  addSheet(workbook, '辨識紀錄', data.logs, [
+    { key: 'file', label: '檔案' }, { key: 'type', label: '類型' }, { key: 'message', label: '說明' }
+  ]);
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `函證整理_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+});
+
+function addSheet(workbook, name, rows, columns) {
+  const ws = workbook.addWorksheet(name);
+  ws.columns = columns.map(col => ({ header: col.label, key: col.key, width: Math.max(12, Math.min(28, col.label.length * 2 + 10)) }));
+  ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF243247' } };
+  ws.getRow(1).alignment = { horizontal: 'center' };
+  rows.forEach(row => {
+    const out = {};
+    columns.forEach(col => out[col.key] = row[col.key] ?? '');
+    ws.addRow(out);
+  });
+  ws.eachRow(row => {
+    row.eachCell(cell => {
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFD9E1EC' } },
+        left: { style: 'thin', color: { argb: 'FFD9E1EC' } },
+        bottom: { style: 'thin', color: { argb: 'FFD9E1EC' } },
+        right: { style: 'thin', color: { argb: 'FFD9E1EC' } }
+      };
+    });
+  });
+}
+
+renderTable();
+</script>
+</body>
+</html>
