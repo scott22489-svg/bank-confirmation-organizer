@@ -368,9 +368,12 @@ function clean(v) {
 }
 
 function amount(v) {
-  const s = clean(v).replace(/,/g, '').replace(/[()]/g, '-');
+  const raw = clean(v);
+  if (!raw || raw === '無' || raw.startsWith('=')) return '';
+  const isParenNegative = /^\(.+\)$/.test(raw);
+  const s = raw.replace(/,/g, '').replace(/[()]/g, '');
   const n = Number(s);
-  return Number.isFinite(n) ? n : '';
+  return Number.isFinite(n) ? (isParenNegative ? -n : n) : '';
 }
 
 function normalizedCurrency(v) {
@@ -611,8 +614,10 @@ function parseDetailRows(rows, map, meta, fileName, bucket, type) {
     if (!rowText || /合計|總計|小計/.test(rowText)) return;
     const amt = map.amount !== undefined ? amount(row[map.amount]) : findLikelyAmount(row);
     const account = map.account !== undefined ? clean(row[map.account]) : findLikelyAccount(row);
-    if (!account && amt === '') return;
-    const bank = clean(row[map.bank]) || meta.branch || meta.bank || guessBankFromFile(fileName);
+    if (amt === '' || isEmptyMarker(account)) return;
+    const bankName = clean(row[map.bank]) || meta.bank || guessBankFromFile(fileName);
+    const branchName = meta.branch && meta.branch !== bankName ? meta.branch : '';
+    const bank = branchName ? `${bankName} ${branchName}` : bankName;
     const common = {
       source: fileName,
       companyId: meta.companyId,
@@ -642,6 +647,11 @@ function parseDetailRows(rows, map, meta, fileName, bucket, type) {
       bucket.push(common);
     }
   });
+}
+
+function isEmptyMarker(v) {
+  const s = clean(v);
+  return !s || ['無', '无', 'N/A', 'NA', '-'].includes(s.toUpperCase());
 }
 
 function findLikelyAmount(row) {
@@ -760,12 +770,7 @@ btnDownload.addEventListener('click', async () => {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = '函證整理工具';
   workbook.created = new Date();
-  addSheet(workbook, '存款明細', data.deposits, columnsFor('deposits'));
-  addSheet(workbook, '借款明細', data.loans, columnsFor('loans'));
-  addSheet(workbook, '其他項目', data.other, columnsFor('other'));
-  addSheet(workbook, '辨識紀錄', data.logs, [
-    { key: 'file', label: '檔案' }, { key: 'type', label: '類型' }, { key: 'message', label: '說明' }
-  ]);
+  addDepositReferenceSheet(workbook, data.deposits);
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const url = URL.createObjectURL(blob);
@@ -778,27 +783,149 @@ btnDownload.addEventListener('click', async () => {
   URL.revokeObjectURL(url);
 });
 
-function addSheet(workbook, name, rows, columns) {
-  const ws = workbook.addWorksheet(name);
-  ws.columns = columns.map(col => ({ header: col.label, key: col.key, width: Math.max(12, Math.min(28, col.label.length * 2 + 10)) }));
-  ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-  ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF243247' } };
-  ws.getRow(1).alignment = { horizontal: 'center' };
-  rows.forEach(row => {
-    const out = {};
-    columns.forEach(col => out[col.key] = row[col.key] ?? '');
-    ws.addRow(out);
-  });
-  ws.eachRow(row => {
-    row.eachCell(cell => {
-      cell.border = {
-        top: { style: 'thin', color: { argb: 'FFD9E1EC' } },
-        left: { style: 'thin', color: { argb: 'FFD9E1EC' } },
-        bottom: { style: 'thin', color: { argb: 'FFD9E1EC' } },
-        right: { style: 'thin', color: { argb: 'FFD9E1EC' } }
-      };
+function addDepositReferenceSheet(workbook, deposits) {
+  const ws = workbook.addWorksheet('A2');
+  ws.views = [{ showGridLines: false }];
+  ws.pageSetup = { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+  ws.columns = [
+    { width: 6.125 }, { width: 34.75 }, { width: 28.5 }, { width: 18.375 },
+    { width: 29.125 }, { width: 5.375 }, { width: 14 }, { width: 13 },
+    { width: 13 }, { width: 13 }, { width: 13 }, { width: 6.125 }
+  ];
+
+  ws.mergeCells('E1:G1');
+  ws.mergeCells('E2:G2');
+  ws.getCell('E1').value = inferCompanyName(deposits);
+  ws.getCell('E2').value = ' 銀 行 存 款 明 細 表 ';
+  [1, 2].forEach(rowNo => {
+    const row = ws.getRow(rowNo);
+    row.height = 25.5;
+    row.eachCell({ includeEmpty: true }, cell => {
+      cell.font = { name: '標楷體', size: 18 };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
     });
   });
+
+  const headerLabels = ['序號', '往 來 銀 行', '帳　　號', '存款種類', '金　　額', '', '利  率', '利息收入\n（扣繳）', '扣繳稅額', '最後付息日', '應收利息', ''];
+  const header = ws.getRow(4);
+  header.values = [null, ...headerLabels];
+  header.height = 40.5;
+  for (let col = 1; col <= 12; col++) {
+    const cell = ws.getCell(4, col);
+    cell.font = { name: '標楷體', size: col === 1 || col === 4 ? 12 : 13 };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border = makeBorder('medium', 'hair', 'medium', col === 5 || col >= 7 ? 'hair' : undefined);
+  }
+
+  const groups = groupDepositsByBank(deposits);
+  let rowNo = 5;
+  let seq = 1;
+  const totalRows = [];
+
+  groups.forEach(group => {
+    const startRow = rowNo;
+    group.rows.forEach(item => {
+      const row = ws.getRow(rowNo);
+      row.height = 22.5;
+      row.values = [
+        null,
+        seq++,
+        item.bank || '',
+        item.account || '',
+        item.kind || '',
+        typeof item.amount === 'number' ? item.amount : '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        ''
+      ];
+      styleDepositDataRow(ws, rowNo);
+      totalRows.push(rowNo);
+      rowNo++;
+    });
+
+    ws.mergeCells(`A${rowNo}:D${rowNo}`);
+    ws.getCell(rowNo, 1).value = `${group.bank} 小計`;
+    ws.getCell(rowNo, 5).value = { formula: `SUM(E${startRow}:E${rowNo - 1})` };
+    styleDepositSubtotalRow(ws, rowNo);
+    rowNo++;
+  });
+
+  ws.mergeCells(`A${rowNo}:D${rowNo}`);
+  ws.getCell(rowNo, 1).value = '合　　　　　　　　　　　　　計';
+  ws.getCell(rowNo, 5).value = totalRows.length ? { formula: `SUM(${totalRows.map(r => `E${r}`).join(',')})` } : '';
+  ws.getCell(rowNo, 8).value = '';
+  ws.getCell(rowNo, 9).value = '';
+  ws.getCell(rowNo, 11).value = '';
+  styleDepositTotalRow(ws, rowNo);
+}
+
+function inferCompanyName(rows) {
+  const hit = rows.find(row => row.companyName);
+  return hit ? hit.companyName : '公司';
+}
+
+function groupDepositsByBank(rows) {
+  const filtered = rows
+    .filter(row => typeof row.amount === 'number' && !isEmptyMarker(row.account))
+    .sort((a, b) => clean(a.bank).localeCompare(clean(b.bank), 'zh-Hant') || clean(a.account).localeCompare(clean(b.account), 'zh-Hant'));
+  const map = new Map();
+  filtered.forEach(row => {
+    const bank = row.bank || '未辨識銀行';
+    if (!map.has(bank)) map.set(bank, []);
+    map.get(bank).push(row);
+  });
+  return Array.from(map.entries()).map(([bank, rows]) => ({ bank, rows }));
+}
+
+function styleDepositDataRow(ws, rowNo) {
+  const row = ws.getRow(rowNo);
+  row.eachCell({ includeEmpty: true }, cell => {
+    cell.font = { name: '標楷體', size: 12 };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border = makeBorder('hair', 'hair', 'hair', 'hair');
+  });
+  ws.getCell(rowNo, 2).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+  ws.getCell(rowNo, 3).numFmt = '@';
+  ws.getCell(rowNo, 5).numFmt = '#,##0_);\\(#,##0\\)';
+  ws.getCell(rowNo, 5).alignment = { horizontal: 'right', vertical: 'middle' };
+}
+
+function styleDepositSubtotalRow(ws, rowNo) {
+  const row = ws.getRow(rowNo);
+  row.height = 22.5;
+  row.eachCell({ includeEmpty: true }, cell => {
+    cell.font = { name: '標楷體', size: 12, bold: true };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = makeBorder('hair', 'hair', 'hair', 'hair');
+  });
+  ws.getCell(rowNo, 5).numFmt = '#,##0_);\\(#,##0\\)';
+  ws.getCell(rowNo, 5).alignment = { horizontal: 'right', vertical: 'middle' };
+}
+
+function styleDepositTotalRow(ws, rowNo) {
+  const row = ws.getRow(rowNo);
+  row.height = 22.5;
+  row.eachCell({ includeEmpty: true }, cell => {
+    cell.font = { name: '標楷體', size: 12, bold: true };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = makeBorder('hair', 'hair', 'hair', 'medium');
+  });
+  ws.getCell(rowNo, 5).numFmt = '#,##0_);\\(#,##0\\)';
+  ws.getCell(rowNo, 5).alignment = { horizontal: 'right', vertical: 'middle' };
+}
+
+function makeBorder(top, left, bottom, right) {
+  const line = style => style ? { style, color: { argb: 'FF000000' } } : undefined;
+  const border = {};
+  if (top) border.top = line(top);
+  if (left) border.left = line(left);
+  if (bottom) border.bottom = line(bottom);
+  if (right) border.right = line(right);
+  return border;
 }
 
 renderTable();
