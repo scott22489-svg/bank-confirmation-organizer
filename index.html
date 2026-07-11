@@ -641,6 +641,7 @@ function parseDetailRows(rows, map, meta, fileName, bucket, type) {
     } else if (type === 'deposit') {
       bucket.push({
         ...common,
+        interestRate: clean(row[map.rate]) || '',
         restriction: clean(row[map.restriction]) || ''
       });
     } else {
@@ -789,12 +790,12 @@ function addDepositReferenceSheet(workbook, deposits) {
   ws.pageSetup = { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
   ws.columns = [
     { width: 6.125 }, { width: 34.75 }, { width: 28.5 }, { width: 18.375 },
-    { width: 29.125 }, { width: 5.375 }, { width: 14 }, { width: 13 },
-    { width: 13 }, { width: 13 }, { width: 13 }, { width: 6.125 }
+    { width: 29.125 }, { width: 14 }, { width: 13 }, { width: 13 },
+    { width: 13 }, { width: 13 }, { width: 6.125 }
   ];
 
-  ws.mergeCells('E1:G1');
-  ws.mergeCells('E2:G2');
+  ws.mergeCells('E1:F1');
+  ws.mergeCells('E2:F2');
   ws.getCell('E1').value = inferCompanyName(deposits);
   ws.getCell('E2').value = ' 銀 行 存 款 明 細 表 ';
   [1, 2].forEach(rowNo => {
@@ -806,15 +807,15 @@ function addDepositReferenceSheet(workbook, deposits) {
     });
   });
 
-  const headerLabels = ['序號', '往 來 銀 行', '帳　　號', '存款種類', '金　　額', '', '利  率', '利息收入\n（扣繳）', '扣繳稅額', '最後付息日', '應收利息', ''];
+  const headerLabels = ['序號', '往 來 銀 行', '帳　　號', '存款種類', '金　　額', '利  率', '利息收入\n（扣繳）', '扣繳稅額', '最後付息日', '應收利息', ''];
   const header = ws.getRow(4);
   header.values = [null, ...headerLabels];
   header.height = 40.5;
-  for (let col = 1; col <= 12; col++) {
+  for (let col = 1; col <= 11; col++) {
     const cell = ws.getCell(4, col);
     cell.font = { name: '標楷體', size: col === 1 || col === 4 ? 12 : 13 };
     cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-    cell.border = makeBorder('medium', 'hair', 'medium', col === 5 || col >= 7 ? 'hair' : undefined);
+    cell.border = makeBorder('medium', 'hair', 'medium', col >= 5 ? 'hair' : undefined);
   }
 
   const groups = groupDepositsByBank(deposits);
@@ -823,19 +824,18 @@ function addDepositReferenceSheet(workbook, deposits) {
   const totalRows = [];
 
   groups.forEach(group => {
-    const startRow = rowNo;
+    const seqLabel = String(seq).padStart(2, '0');
     group.rows.forEach(item => {
       const row = ws.getRow(rowNo);
       row.height = 22.5;
       row.values = [
         null,
-        seq++,
+        seqLabel,
         item.bank || '',
-        item.account || '',
+        item.account ? `\u200b${item.account}` : '',
         item.kind || '',
         typeof item.amount === 'number' ? item.amount : '',
-        '',
-        '',
+        normalizeRateForSchedule(item.interestRate),
         '',
         '',
         '',
@@ -846,21 +846,22 @@ function addDepositReferenceSheet(workbook, deposits) {
       totalRows.push(rowNo);
       rowNo++;
     });
-
-    ws.mergeCells(`A${rowNo}:D${rowNo}`);
-    ws.getCell(rowNo, 1).value = `${group.bank} 小計`;
-    ws.getCell(rowNo, 5).value = { formula: `SUM(E${startRow}:E${rowNo - 1})` };
-    styleDepositSubtotalRow(ws, rowNo);
-    rowNo++;
+    seq++;
   });
 
   ws.mergeCells(`A${rowNo}:D${rowNo}`);
   ws.getCell(rowNo, 1).value = '合　　　　　　　　　　　　　計';
   ws.getCell(rowNo, 5).value = totalRows.length ? { formula: `SUM(${totalRows.map(r => `E${r}`).join(',')})` } : '';
-  ws.getCell(rowNo, 8).value = '';
-  ws.getCell(rowNo, 9).value = '';
-  ws.getCell(rowNo, 11).value = '';
   styleDepositTotalRow(ws, rowNo);
+}
+
+function normalizeRateForSchedule(rateText) {
+  const text = clean(rateText);
+  if (!text || isEmptyMarker(text)) return '';
+  const hasPercent = text.includes('%');
+  const numeric = Number.parseFloat(text.replace('%', '').replace(/,/g, ''));
+  if (Number.isNaN(numeric)) return text;
+  return hasPercent || numeric > 0.1 ? numeric / 100 : numeric;
 }
 
 function inferCompanyName(rows) {
@@ -892,18 +893,7 @@ function styleDepositDataRow(ws, rowNo) {
   ws.getCell(rowNo, 3).numFmt = '@';
   ws.getCell(rowNo, 5).numFmt = '#,##0_);\\(#,##0\\)';
   ws.getCell(rowNo, 5).alignment = { horizontal: 'right', vertical: 'middle' };
-}
-
-function styleDepositSubtotalRow(ws, rowNo) {
-  const row = ws.getRow(rowNo);
-  row.height = 22.5;
-  row.eachCell({ includeEmpty: true }, cell => {
-    cell.font = { name: '標楷體', size: 12, bold: true };
-    cell.alignment = { horizontal: 'center', vertical: 'middle' };
-    cell.border = makeBorder('hair', 'hair', 'hair', 'hair');
-  });
-  ws.getCell(rowNo, 5).numFmt = '#,##0_);\\(#,##0\\)';
-  ws.getCell(rowNo, 5).alignment = { horizontal: 'right', vertical: 'middle' };
+  ws.getCell(rowNo, 6).numFmt = '0.000%';
 }
 
 function styleDepositTotalRow(ws, rowNo) {
