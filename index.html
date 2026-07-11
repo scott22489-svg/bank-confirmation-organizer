@@ -822,10 +822,13 @@ function addDepositReferenceSheet(workbook, deposits) {
   let rowNo = 5;
   let seq = 1;
   const totalRows = [];
+  let totalAmount = 0;
 
   groups.forEach(group => {
     const seqLabel = String(seq).padStart(2, '0');
     group.rows.forEach(item => {
+      const amountValue = typeof item.amount === 'number' ? item.amount : '';
+      if (typeof amountValue === 'number') totalAmount += amountValue;
       const row = ws.getRow(rowNo);
       row.height = 22.5;
       row.values = [
@@ -833,7 +836,7 @@ function addDepositReferenceSheet(workbook, deposits) {
         item.bank || '',
         item.account ? `\u200b${item.account}` : '',
         item.kind || '',
-        typeof item.amount === 'number' ? item.amount : '',
+        amountValue,
         normalizeRateForSchedule(item.interestRate),
         '',
         '',
@@ -850,7 +853,7 @@ function addDepositReferenceSheet(workbook, deposits) {
 
   ws.mergeCells(`A${rowNo}:D${rowNo}`);
   ws.getCell(rowNo, 1).value = '合　　　　　　　　　　　　　計';
-  ws.getCell(rowNo, 5).value = totalRows.length ? { formula: `SUM(${totalRows.map(r => `E${r}`).join(',')})` } : '';
+  ws.getCell(rowNo, 5).value = totalRows.length ? { formula: `SUM(${totalRows.map(r => `E${r}`).join(',')})`, result: totalAmount } : '';
   styleDepositTotalRow(ws, rowNo);
 }
 
