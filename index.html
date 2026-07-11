@@ -793,6 +793,7 @@ function addDepositReferenceSheet(workbook, deposits) {
     { width: 29.125 }, { width: 14 }, { width: 13 }, { width: 13 },
     { width: 13 }, { width: 13 }, { width: 6.125 }
   ];
+  ws.getColumn(6).numFmt = '0.000%';
 
   ws.mergeCells('E1:F1');
   ws.mergeCells('E2:F2');
