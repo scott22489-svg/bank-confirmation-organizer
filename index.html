@@ -359,7 +359,7 @@ let activeTab = 'deposits';
 let data = emptyData();
 
 function emptyData() {
-  return { deposits: [], loans: [], other: [], logs: [], fileCount: 0 };
+  return { deposits: [], loans: [], other: [], logs: [], fileCount: 0, companyRefs: [] };
 }
 
 function clean(v) {
@@ -468,11 +468,18 @@ btnParse.addEventListener('click', async () => {
     }
   }
   dedupeRows();
+  const companyError = validateSingleCompany(data);
+  if (companyError) {
+    data.deposits = [];
+    data.loans = [];
+    data.other = [];
+    data.logs.push({ file: '全部檔案', type: '公司檢核', message: companyError });
+  }
   updateMetrics();
   renderTable();
-  btnDownload.disabled = data.deposits.length + data.loans.length + data.other.length === 0;
+  btnDownload.disabled = companyError || data.deposits.length + data.loans.length + data.other.length === 0;
   const total = data.deposits.length + data.loans.length + data.other.length;
-  status(total ? `整理完成，共辨識 ${total} 筆資料。` : '沒有辨識到明細，請確認函證格式或改用手動欄位對應。', total ? 'ok' : 'warn');
+  status(companyError || (total ? `整理完成，共辨識 ${total} 筆資料。` : '沒有辨識到明細，請確認函證格式或改用手動欄位對應。'), companyError ? 'warn' : total ? 'ok' : 'warn');
   btnParse.disabled = uploadedFiles.length === 0;
 });
 
@@ -490,13 +497,16 @@ async function readRows(file) {
 
 function parseRows(rows, fileName, target) {
   const meta = inferMeta(rows);
+  registerCompany(target, meta, fileName);
+  const fbisDepositCount = parseFbisDepositRows(rows, meta, fileName, target);
   const tables = findTables(rows);
   if (!tables.length) {
-    target.logs.push({ file: fileName, type: '未找到表格', message: '沒有偵測到含帳號、幣別、金額或餘額的表頭列。' });
+    if (!fbisDepositCount) target.logs.push({ file: fileName, type: '未找到表格', message: '沒有偵測到含帳號、幣別、金額或餘額的表頭列。' });
     return;
   }
   for (const table of tables) {
     const section = classifySection(table.title);
+    if (section === 'deposit' && fbisDepositCount) continue;
     const mapped = mapHeaders(table.headers);
     if (section === 'deposit') parseDetailRows(table.rows, mapped, meta, fileName, target.deposits, 'deposit');
     else if (section === 'loan') parseDetailRows(table.rows, mapped, meta, fileName, target.loans, 'loan');
@@ -507,6 +517,29 @@ function parseRows(rows, fileName, target) {
       message: `${table.sheet} 第 ${table.headerRow} 列起，讀取 ${table.rows.length} 列`
     });
   }
+  if (fbisDepositCount) {
+    target.logs.push({ file: fileName, type: '存款表', message: `依銀行函證固定格式讀取 ${fbisDepositCount} 筆存款明細` });
+  }
+}
+
+function registerCompany(target, meta, fileName) {
+  const key = companyIdentity(meta);
+  if (key) target.companyRefs.push({ key, file: fileName });
+}
+
+function companyIdentity(meta) {
+  return clean(meta.companyId) || clean(meta.companyName);
+}
+
+function validateSingleCompany(target) {
+  const keys = new Map();
+  target.companyRefs.forEach(ref => {
+    if (!ref.key) return;
+    if (!keys.has(ref.key)) keys.set(ref.key, []);
+    keys.get(ref.key).push(ref.file);
+  });
+  if (keys.size <= 1) return '';
+  return `偵測到 ${keys.size} 家不同公司，為避免混入不同客戶資料，本工具一次只能整理同一家公司。請分批上傳。`;
 }
 
 function inferMeta(rows) {
@@ -551,7 +584,6 @@ function findTables(rows) {
         continue;
       }
       if (j > i + 1 && isHeaderRow(rows[j].cells)) break;
-      if (/合計|總計/.test(rowText) && detailRows.length) break;
       detailRows.push(rows[j].cells);
     }
     if (detailRows.length) {
@@ -562,6 +594,51 @@ function findTables(rows) {
     }
   }
   return tables;
+}
+
+function parseFbisDepositRows(rows, meta, fileName, target) {
+  let count = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const current = rows[i];
+    const cells = current.cells;
+    if (!isFbisDepositHeader(cells)) continue;
+    for (let j = i + 1; j < rows.length; j++) {
+      if (rows[j].sheet !== current.sheet) break;
+      const row = rows[j].cells;
+      const kind = clean(row[0]);
+      const rowText = row.join('');
+      if (!rowText) break;
+      if (/^\d+\./.test(kind)) break;
+      if (/合計|總計|小計/.test(kind)) continue;
+      const account = clean(row[1]);
+      const amt = amount(row[3]);
+      if (amt === '' || isEmptyMarker(account)) continue;
+      const bankName = meta.bank || guessBankFromFile(fileName);
+      const branchName = meta.branch && meta.branch !== bankName ? meta.branch : '';
+      const bank = branchName ? `${bankName}-${branchName}` : bankName;
+      target.deposits.push({
+        source: fileName,
+        companyId: meta.companyId,
+        companyName: meta.companyName,
+        bank,
+        kind,
+        account,
+        currency: inferDepositCurrency(row[2], kind),
+        amount: amt,
+        exchangeRate: exchangeRateForCurrency(inferDepositCurrency(row[2], kind)),
+        interestRate: clean(row[7]) || '',
+        restriction: clean(row[4]) || '',
+        note: clean(row[8]) || '',
+        raw: rowText
+      });
+      count++;
+    }
+  }
+  return count;
+}
+
+function isFbisDepositHeader(cells) {
+  return clean(cells[0]) === '存款別' && clean(cells[1]) === '帳號' && clean(cells[2]) === '幣別' && /餘額|余额|金額/.test(clean(cells[3]));
 }
 
 function isHeaderRow(cells) {
@@ -625,7 +702,7 @@ function parseDetailRows(rows, map, meta, fileName, bucket, type) {
       bank,
       kind: clean(row[map.kind]) || '',
       account,
-      currency: normalizedCurrency(row[map.currency]) || 'TWD',
+      currency: inferDepositCurrency(row[map.currency], row[map.kind]),
       amount: amt,
       note: clean(row[map.note]) || '',
       raw: rowText
@@ -641,6 +718,7 @@ function parseDetailRows(rows, map, meta, fileName, bucket, type) {
     } else if (type === 'deposit') {
       bucket.push({
         ...common,
+        exchangeRate: exchangeRateForCurrency(common.currency),
         interestRate: clean(row[map.rate]) || '',
         restriction: clean(row[map.restriction]) || ''
       });
@@ -648,6 +726,18 @@ function parseDetailRows(rows, map, meta, fileName, bucket, type) {
       bucket.push(common);
     }
   });
+}
+
+function inferDepositCurrency(currencyValue, kindValue) {
+  const fromColumn = normalizedCurrency(currencyValue);
+  if (fromColumn) return fromColumn;
+  const kind = clean(kindValue).toUpperCase();
+  const match = kind.match(/\(([A-Z]{3})\)/);
+  return match ? match[1] : 'TWD';
+}
+
+function exchangeRateForCurrency(currency) {
+  return normalizedCurrency(currency) === 'TWD' ? 1 : '';
 }
 
 function isEmptyMarker(v) {
@@ -732,7 +822,7 @@ function columnsFor(tab) {
   if (tab === 'deposits') return [
     { key: 'bank', label: '銀行別' }, { key: 'kind', label: '存款別' }, { key: 'account', label: '帳號' },
     { key: 'currency', label: '幣別', cls: 'center' }, { key: 'amount', label: '回函金額', cls: 'num', money: true },
-    { key: 'restriction', label: '限制情形' }, { key: 'note', label: '備註' }, { key: 'source', label: '來源檔' }
+    { key: 'exchangeRate', label: '匯率', cls: 'center' }, { key: 'restriction', label: '限制情形' }, { key: 'note', label: '備註' }, { key: 'source', label: '來源檔' }
   ];
   if (tab === 'loans') return [
     { key: 'bank', label: '銀行別' }, { key: 'kind', label: '放款別' }, { key: 'account', label: '帳號' },
@@ -789,14 +879,16 @@ function addDepositReferenceSheet(workbook, deposits) {
   ws.views = [{ showGridLines: false }];
   ws.pageSetup = { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
   ws.columns = [
-    { width: 4.75 }, { width: 34.75 }, { width: 28.5 }, { width: 18.375 },
-    { width: 29.125 }, { width: 14 }, { width: 13 }, { width: 13 },
-    { width: 13 }, { width: 13 }, { width: 6.125 }
+    { width: 6.125 }, { width: 21.5 }, { width: 16 }, { width: 18.25 },
+    { width: 8.375 }, { width: 16.25 }, { width: 10.75 }, { width: 15.875 },
+    { width: 4.5 }, { width: 10.25 }, { width: 15.125 }, { width: 3.625 },
+    { width: 10.625 }, { width: 3.625 }, { width: 12.125 }, { width: 15.875 },
+    { width: 3.75 }
   ];
-  ws.getColumn(6).numFmt = '0.000%';
+  ws.getColumn(10).numFmt = '0.000%';
 
-  ws.mergeCells('E1:F1');
-  ws.mergeCells('E2:F2');
+  ws.mergeCells('E1:H1');
+  ws.mergeCells('E2:H2');
   ws.getCell('E1').value = inferCompanyName(deposits);
   ws.getCell('E2').value = ' 銀 行 存 款 明 細 表 ';
   [1, 2].forEach(rowNo => {
@@ -808,45 +900,56 @@ function addDepositReferenceSheet(workbook, deposits) {
     });
   });
 
-  const headerLabels = ['序號', '往 來 銀 行', '帳　　號', '存款種類', '金　　額', '利  率', '利息收入\n（扣繳）', '扣繳稅額', '最後付息日', '應收利息', ''];
+  const headerLabels = ['序號', '往 來 銀 行', '帳　　號', '存款種類', '幣  別', '金　　額', '匯    率', '金　　額', '利  率', '', '利息收入\n（扣繳）', '扣繳稅額', '', '', '最後付息日', '應收利息', ''];
   const header = ws.getRow(4);
-  header.values = headerLabels;
+  setRowValues(ws, 4, headerLabels);
   header.height = 40.5;
-  for (let col = 1; col <= 11; col++) {
+  for (let col = 1; col <= 17; col++) {
     const cell = ws.getCell(4, col);
-    cell.font = { name: '標楷體', size: col === 1 || col === 4 ? 12 : 13 };
+    cell.font = { name: '標楷體', size: col === 1 || col === 4 || col === 5 ? 12 : 13 };
     cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
     cell.border = makeBorder('medium', 'hair', 'medium', col >= 5 ? 'hair' : undefined);
   }
+  ws.mergeCells('I4:J4');
+  ws.mergeCells('L4:M4');
 
   const groups = groupDepositsByBank(deposits);
   let rowNo = 5;
   let seq = 1;
-  const totalRows = [];
-  let totalAmount = 0;
+  const convertedRows = [];
+  let totalConverted = 0;
 
   groups.forEach(group => {
     const seqLabel = String(seq).padStart(2, '0');
-    group.rows.forEach(item => {
+    group.rows.forEach((item, itemIndex) => {
       const amountValue = typeof item.amount === 'number' ? item.amount : '';
-      if (typeof amountValue === 'number') totalAmount += amountValue;
+      const currency = inferDepositCurrency(item.currency, item.kind);
+      const exchangeRate = exchangeRateForCurrency(currency);
+      const convertedValue = typeof amountValue === 'number' && exchangeRate === 1 ? Math.round(amountValue) : '';
+      if (typeof convertedValue === 'number') totalConverted += convertedValue;
       const row = ws.getRow(rowNo);
       row.height = 22.5;
-      row.values = [
-        seqLabel,
+      setRowValues(ws, rowNo, [
+        itemIndex === 0 ? seqLabel : '',
         item.bank || '',
         item.account ? `\u200b${item.account}` : '',
         item.kind || '',
+        currency,
         amountValue,
+        exchangeRate,
+        { formula: `IF(OR(F${rowNo}="",G${rowNo}=""),"",ROUND(F${rowNo}*G${rowNo},0))`, result: convertedValue },
+        '',
         normalizeRateForSchedule(item.interestRate),
         '',
         '',
         '',
         '',
+        '',
+        '',
         ''
-      ];
+      ]);
       styleDepositDataRow(ws, rowNo);
-      totalRows.push(rowNo);
+      convertedRows.push(rowNo);
       rowNo++;
     });
     seq++;
@@ -854,8 +957,14 @@ function addDepositReferenceSheet(workbook, deposits) {
 
   ws.mergeCells(`A${rowNo}:D${rowNo}`);
   ws.getCell(rowNo, 1).value = '合　　　　　　　　　　　　　計';
-  ws.getCell(rowNo, 5).value = totalRows.length ? { formula: `SUM(${totalRows.map(r => `E${r}`).join(',')})`, result: totalAmount } : '';
+  ws.getCell(rowNo, 8).value = convertedRows.length ? { formula: `SUM(${convertedRows.map(r => `H${r}`).join(',')})`, result: totalConverted } : '';
   styleDepositTotalRow(ws, rowNo);
+}
+
+function setRowValues(ws, rowNo, values) {
+  values.forEach((value, index) => {
+    ws.getCell(rowNo, index + 1).value = value;
+  });
 }
 
 function normalizeRateForSchedule(rateText) {
@@ -875,7 +984,7 @@ function inferCompanyName(rows) {
 function groupDepositsByBank(rows) {
   const filtered = rows
     .filter(row => typeof row.amount === 'number' && !isEmptyMarker(row.account))
-    .sort((a, b) => clean(a.bank).localeCompare(clean(b.bank), 'zh-Hant') || clean(a.account).localeCompare(clean(b.account), 'zh-Hant'));
+    .sort((a, b) => clean(a.bank).localeCompare(clean(b.bank), 'zh-Hant') || clean(a.account).localeCompare(clean(b.account), 'zh-Hant') || clean(a.currency).localeCompare(clean(b.currency), 'zh-Hant') || clean(a.kind).localeCompare(clean(b.kind), 'zh-Hant'));
   const map = new Map();
   filtered.forEach(row => {
     const bank = row.bank || '未辨識銀行';
@@ -887,7 +996,7 @@ function groupDepositsByBank(rows) {
 
 function styleDepositDataRow(ws, rowNo) {
   const row = ws.getRow(rowNo);
-  for (let col = 1; col <= 11; col++) {
+  for (let col = 1; col <= 17; col++) {
     const cell = ws.getCell(rowNo, col);
     cell.font = { name: '標楷體', size: 12 };
     cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
@@ -895,22 +1004,26 @@ function styleDepositDataRow(ws, rowNo) {
   }
   ws.getCell(rowNo, 2).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
   ws.getCell(rowNo, 3).numFmt = '@';
-  ws.getCell(rowNo, 5).numFmt = '#,##0_);\\(#,##0\\)';
-  ws.getCell(rowNo, 5).alignment = { horizontal: 'right', vertical: 'middle' };
-  ws.getCell(rowNo, 6).numFmt = '0.000%';
+  ws.getCell(rowNo, 5).numFmt = '@';
+  ws.getCell(rowNo, 6).numFmt = '#,##0.00_);\\(#,##0.00\\)';
+  ws.getCell(rowNo, 6).alignment = { horizontal: 'right', vertical: 'middle' };
+  ws.getCell(rowNo, 7).numFmt = '0.0000';
+  ws.getCell(rowNo, 8).numFmt = '#,##0_);\\(#,##0\\)';
+  ws.getCell(rowNo, 8).alignment = { horizontal: 'right', vertical: 'middle' };
+  ws.getCell(rowNo, 10).numFmt = '0.000%';
 }
 
 function styleDepositTotalRow(ws, rowNo) {
   const row = ws.getRow(rowNo);
   row.height = 22.5;
-  for (let col = 1; col <= 11; col++) {
+  for (let col = 1; col <= 17; col++) {
     const cell = ws.getCell(rowNo, col);
     cell.font = { name: '標楷體', size: 12, bold: true };
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
     cell.border = makeBorder('hair', 'hair', 'hair', 'medium');
   }
-  ws.getCell(rowNo, 5).numFmt = '#,##0_);\\(#,##0\\)';
-  ws.getCell(rowNo, 5).alignment = { horizontal: 'right', vertical: 'middle' };
+  ws.getCell(rowNo, 8).numFmt = '#,##0_);\\(#,##0\\)';
+  ws.getCell(rowNo, 8).alignment = { horizontal: 'right', vertical: 'middle' };
 }
 
 function makeBorder(top, left, bottom, right) {
