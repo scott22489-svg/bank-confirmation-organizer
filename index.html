@@ -789,7 +789,7 @@ function addDepositReferenceSheet(workbook, deposits) {
   ws.views = [{ showGridLines: false }];
   ws.pageSetup = { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
   ws.columns = [
-    { width: 6.125 }, { width: 34.75 }, { width: 28.5 }, { width: 18.375 },
+    { width: 4.75 }, { width: 34.75 }, { width: 28.5 }, { width: 18.375 },
     { width: 29.125 }, { width: 14 }, { width: 13 }, { width: 13 },
     { width: 13 }, { width: 13 }, { width: 6.125 }
   ];
@@ -809,7 +809,7 @@ function addDepositReferenceSheet(workbook, deposits) {
 
   const headerLabels = ['序號', '往 來 銀 行', '帳　　號', '存款種類', '金　　額', '利  率', '利息收入\n（扣繳）', '扣繳稅額', '最後付息日', '應收利息', ''];
   const header = ws.getRow(4);
-  header.values = [null, ...headerLabels];
+  header.values = headerLabels;
   header.height = 40.5;
   for (let col = 1; col <= 11; col++) {
     const cell = ws.getCell(4, col);
@@ -829,7 +829,6 @@ function addDepositReferenceSheet(workbook, deposits) {
       const row = ws.getRow(rowNo);
       row.height = 22.5;
       row.values = [
-        null,
         seqLabel,
         item.bank || '',
         item.account ? `\u200b${item.account}` : '',
