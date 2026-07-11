@@ -516,10 +516,10 @@ function inferMeta(rows) {
     cells.forEach((cell, i) => {
       const next = clean(cells[i + 1]);
       const joined = clean(cells.slice(i, i + 4).join(' '));
-      if (!meta.companyId && /統一編號|營利事業統一編號/.test(cell)) meta.companyId = next || extractAfterColon(cell);
-      if (!meta.companyName && /公司名稱|客戶名稱|受函證者/.test(cell)) meta.companyName = next || extractAfterColon(cell);
-      if (!meta.bank && /銀行名稱|金融機構|銀行別/.test(cell)) meta.bank = next || extractAfterColon(cell);
-      if (!meta.branch && /分行|分支機構/.test(cell)) meta.branch = next || extractAfterColon(cell);
+      if (!meta.companyId && /統一編號|營利事業統一編號|查核企業統編/.test(cell)) meta.companyId = next || extractAfterColon(cell);
+      if (!meta.companyName && /公司名稱|客戶名稱|受函證者|查核企業名稱/.test(cell)) meta.companyName = next || extractAfterColon(cell);
+      if (!meta.bank && /銀行名稱|金融機構名稱|銀行別/.test(cell) && !/代碼|代號/.test(cell)) meta.bank = next || extractAfterColon(cell);
+      if (!meta.branch && /分行名稱|分支機構名稱/.test(cell) && !/代碼|代號/.test(cell)) meta.branch = next || extractAfterColon(cell);
       if (!meta.baseDate && /基準日|函證日|查核日期/.test(cell)) meta.baseDate = normalizeDate(next || extractAfterColon(cell));
       if (!meta.baseDate) {
         const m = joined.match(/(20\d{2}[\/.-]\d{1,2}[\/.-]\d{1,2})/);
@@ -617,7 +617,7 @@ function parseDetailRows(rows, map, meta, fileName, bucket, type) {
     if (amt === '' || isEmptyMarker(account)) return;
     const bankName = clean(row[map.bank]) || meta.bank || guessBankFromFile(fileName);
     const branchName = meta.branch && meta.branch !== bankName ? meta.branch : '';
-    const bank = branchName ? `${bankName} ${branchName}` : bankName;
+    const bank = branchName ? `${bankName}-${branchName}` : bankName;
     const common = {
       source: fileName,
       companyId: meta.companyId,
@@ -884,11 +884,12 @@ function groupDepositsByBank(rows) {
 
 function styleDepositDataRow(ws, rowNo) {
   const row = ws.getRow(rowNo);
-  row.eachCell({ includeEmpty: true }, cell => {
+  for (let col = 1; col <= 11; col++) {
+    const cell = ws.getCell(rowNo, col);
     cell.font = { name: '標楷體', size: 12 };
     cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
     cell.border = makeBorder('hair', 'hair', 'hair', 'hair');
-  });
+  }
   ws.getCell(rowNo, 2).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
   ws.getCell(rowNo, 3).numFmt = '@';
   ws.getCell(rowNo, 5).numFmt = '#,##0_);\\(#,##0\\)';
@@ -899,11 +900,12 @@ function styleDepositDataRow(ws, rowNo) {
 function styleDepositTotalRow(ws, rowNo) {
   const row = ws.getRow(rowNo);
   row.height = 22.5;
-  row.eachCell({ includeEmpty: true }, cell => {
+  for (let col = 1; col <= 11; col++) {
+    const cell = ws.getCell(rowNo, col);
     cell.font = { name: '標楷體', size: 12, bold: true };
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
     cell.border = makeBorder('hair', 'hair', 'hair', 'medium');
-  });
+  }
   ws.getCell(rowNo, 5).numFmt = '#,##0_);\\(#,##0\\)';
   ws.getCell(rowNo, 5).alignment = { horizontal: 'right', vertical: 'middle' };
 }
