@@ -1,0 +1,1783 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>401/403 AP8 與 AP8-1 產生器</title>
+  <script type="module">
+    import * as pdfjsLib from "./assets/pdf.min.mjs";
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      "./assets/pdf.worker.min.mjs",
+      window.location.href
+    ).href;
+    window.pdfjsLib = pdfjsLib;
+    window.dispatchEvent(new Event("pdfjs-ready"));
+  </script>
+  <script src="./assets/tesseract.min.js"></script>
+  <script src="./assets/jszip.min.js"></script>
+  <style>
+    :root {
+      --ink: #17202a;
+      --muted: #596775;
+      --line: #d7dee8;
+      --soft: #f6f8fb;
+      --panel: #ffffff;
+      --accent: #0b63ce;
+      --accent-soft: #eaf3ff;
+      --ok: #19733a;
+      --warn: #b54708;
+      --bad: #b42318;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #f8fafc;
+      font-family: "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif;
+    }
+
+    header {
+      padding: 26px 34px 18px;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    header p, .note {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.65;
+      font-size: 14px;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(420px, 520px);
+      gap: 16px;
+      align-items: start;
+      padding: 20px 34px 36px;
+    }
+
+    .work-panel {
+      display: grid;
+      gap: 16px;
+      min-width: 0;
+    }
+
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 13px 16px;
+      background: var(--soft);
+      border-bottom: 1px solid var(--line);
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    .content {
+      padding: 16px;
+    }
+
+    .dropzone {
+      display: grid;
+      gap: 12px;
+      padding: 18px;
+      border: 2px dashed #b7c9df;
+      border-radius: 8px;
+      background: #fbfdff;
+    }
+
+    input[type="file"], input[type="text"], input[type="number"] {
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+      font: inherit;
+      padding: 8px 10px;
+    }
+
+    input[type="file"] {
+      max-width: 680px;
+    }
+
+    button {
+      border: 1px solid transparent;
+      border-radius: 6px;
+      min-height: 38px;
+      padding: 8px 13px;
+      color: #fff;
+      background: var(--accent);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      color: var(--ink);
+      background: #fff;
+      border-color: var(--line);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: .55;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .check {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(150px, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .card {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+    }
+
+    .card span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 5px;
+    }
+
+    .card strong {
+      display: block;
+      font-size: 20px;
+      text-align: right;
+      letter-spacing: 0;
+    }
+
+    .table-wrap {
+      max-height: 52vh;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    table {
+      width: 100%;
+      min-width: 1580px;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 6px 7px;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #eef5ff;
+      text-align: center;
+      font-weight: 700;
+    }
+
+    td input {
+      width: 112px;
+      min-height: 30px;
+      padding: 5px 6px;
+      border: 1px solid transparent;
+      background: transparent;
+      text-align: right;
+      font-size: 13px;
+    }
+
+    td input:focus {
+      outline: 2px solid #9cc5ff;
+      background: #fff;
+      border-radius: 4px;
+    }
+
+    .status {
+      min-height: 46px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfe;
+      color: var(--muted);
+      white-space: pre-wrap;
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 4px 9px;
+      background: var(--accent-soft);
+      color: #164e94;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .ok { color: var(--ok); font-weight: 700; }
+    .warn { color: var(--warn); font-weight: 700; }
+    .bad { color: var(--bad); font-weight: 700; }
+
+    .preview-panel {
+      position: sticky;
+      top: 14px;
+      max-height: calc(100vh - 28px);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .preview-panel .content {
+      display: grid;
+      gap: 12px;
+      overflow: auto;
+    }
+
+    .tabs {
+      display: inline-flex;
+      gap: 6px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #fff;
+    }
+
+    .tab-btn {
+      min-height: 30px;
+      padding: 5px 10px;
+      border-radius: 5px;
+      color: var(--muted);
+      background: transparent;
+      border-color: transparent;
+      font-size: 13px;
+    }
+
+    .tab-btn.active {
+      color: #fff;
+      background: var(--accent);
+    }
+
+    .preview-title {
+      display: grid;
+      gap: 3px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+    }
+
+    .preview-title strong {
+      font-size: 15px;
+    }
+
+    .preview-title span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .preview-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .preview-actions button {
+      min-height: 30px;
+      padding: 5px 10px;
+      font-size: 13px;
+    }
+
+    .preview-scroll {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .preview-panel table {
+      min-width: 0;
+      font-size: 12px;
+    }
+
+    .preview-panel th,
+    .preview-panel td {
+      padding: 5px 6px;
+    }
+
+    .preview-panel td.num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .preview-wide {
+      min-width: 820px !important;
+    }
+
+    .preview-compact {
+      min-width: 420px !important;
+    }
+
+    .preview-empty {
+      padding: 22px 12px;
+      color: var(--muted);
+      text-align: center;
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+      line-height: 1.6;
+      font-size: 14px;
+    }
+
+    @media (max-width: 820px) {
+      main { grid-template-columns: 1fr; }
+      header, main { padding-left: 18px; padding-right: 18px; }
+      .section-head { align-items: flex-start; flex-direction: column; }
+      .meta-grid, .cards { grid-template-columns: 1fr; }
+      .preview-panel { position: static; max-height: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>401/403 AP8 與 AP8-1 產生器</h1>
+    <p>上傳同一年度各期 401 或 403 申報書 PDF，系統會讀取公司名稱、年度、各期銷售額與進項憑證金額，先在畫面加總供核對，再輸出 Excel。PDF 若無文字層，可勾選 OCR 後辨識。</p>
+  </header>
+
+  <main>
+    <div class="work-panel">
+    <section>
+      <div class="section-head">
+        <h2>上傳申報書</h2>
+        <span class="tag">支援多檔 PDF</span>
+      </div>
+      <div class="content">
+        <div class="dropzone">
+          <input id="pdfFiles" type="file" accept="application/pdf" multiple />
+          <div class="controls">
+            <button id="parseBtn" type="button">讀取並加總</button>
+            <button id="clearBtn" class="secondary">清除結果</button>
+            <label class="check">
+              <input id="ocrToggle" type="checkbox" checked />
+              文字層不足時自動 OCR
+            </label>
+          </div>
+          <p class="note">第一次開啟需要網路載入 PDF、OCR 與 Excel 元件。OCR 會花較久時間，若 PDF 本身可選取文字，通常不會啟動 OCR。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>基本資料</h2>
+        <span id="parseState" class="tag">尚未讀取</span>
+      </div>
+      <div class="content">
+        <div class="meta-grid">
+          <label class="field">
+            <span>公司全名</span>
+            <input id="companyName" type="text" placeholder="由 PDF 偵測，可手動修正" />
+          </label>
+          <label class="field">
+            <span>年度</span>
+            <input id="rocYear" type="text" placeholder="例：111" />
+          </label>
+          <label class="field">
+            <span>Excel 字體大小</span>
+            <input id="fontSize" type="number" min="8" max="16" value="11" />
+          </label>
+        </div>
+        <div class="cards">
+          <div class="card"><span>銷售額合計</span><strong id="totalSales">0</strong></div>
+          <div class="card"><span>銷貨退回及折讓</span><strong id="totalSalesReturns">0</strong></div>
+          <div class="card"><span>進項憑證金額合計</span><strong id="totalInputs">0</strong></div>
+          <div class="card"><span>進項淨額</span><strong id="totalInputNet">0</strong></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>逐期辨識結果</h2>
+        <div class="controls">
+          <button id="addRowBtn" class="secondary">新增空白期別</button>
+          <button id="exportBtn" disabled>產生 Excel</button>
+        </div>
+      </div>
+      <div class="content">
+        <div class="table-wrap">
+          <table id="resultTable">
+            <thead>
+              <tr>
+                <th>期別</th>
+                <th>檔名</th>
+                <th>三聯式銷售額</th>
+                <th>二聯式銷售額</th>
+                <th>零稅率外銷</th>
+                <th>零稅率其他</th>
+                <th>免稅</th>
+                <th>其他銷售</th>
+                <th>特種稅額</th>
+                <th>銷售額合計</th>
+                <th>銷貨退回折讓</th>
+                <th>進貨及費用</th>
+                <th>固定資產</th>
+                <th>進項退回折讓</th>
+                <th>固定資產退回</th>
+                <th>進口免稅貨物</th>
+                <th>狀態</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>處理訊息</h2>
+      </div>
+      <div class="content">
+        <div id="log" class="status">請先選取 PDF。</div>
+      </div>
+    </section>
+    </div>
+
+    <aside class="preview-panel">
+      <section>
+        <div class="section-head">
+          <h2>Excel 預覽</h2>
+          <div class="tabs" role="tablist" aria-label="Excel 預覽頁籤">
+            <button id="previewAp8Btn" class="tab-btn active" type="button">AP8</button>
+            <button id="previewAp81Btn" class="tab-btn" type="button">AP8-1</button>
+          </div>
+        </div>
+        <div class="content">
+          <div class="preview-title">
+            <strong id="previewFileName">尚未產生預覽</strong>
+            <span id="previewMeta">讀取 PDF 後會在這裡顯示將輸出的 Excel 內容。</span>
+          </div>
+          <div id="excelPreview" class="preview-empty">請先上傳 PDF 並按「讀取並加總」。</div>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <script>
+    function installSimpleExcelJS() {
+      if (window.ExcelJS || !window.JSZip) return;
+
+      const xmlEscape = (value) => String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+
+      const lettersToNumber = (letters) => {
+        let n = 0;
+        for (const ch of letters) n = n * 26 + ch.charCodeAt(0) - 64;
+        return n;
+      };
+
+      const splitAddress = (address) => {
+        const match = String(address).toUpperCase().match(/^([A-Z]+)(\d+)$/);
+        if (!match) throw new Error(`儲存格位置不正確：${address}`);
+        return { col: lettersToNumber(match[1]), row: Number(match[2]) };
+      };
+      class SimpleCell {
+        constructor(row, col) {
+          this.row = row;
+          this.col = col;
+          this.value = null;
+          this.font = {};
+          this.alignment = {};
+          this.border = null;
+          this.numFmt = "";
+          this.fill = null;
+        }
+      }
+
+      class SimpleRow {
+        constructor(index) {
+          this.index = index;
+          this.height = null;
+        }
+      }
+
+      class SimpleWorksheet {
+        constructor(name) {
+          this.name = name;
+          this.columns = [];
+          this.pageSetup = {};
+          this.views = [];
+          this._cells = new Map();
+          this._rows = new Map();
+          this._merges = [];
+        }
+
+        getRow(index) {
+          if (!this._rows.has(index)) this._rows.set(index, new SimpleRow(index));
+          return this._rows.get(index);
+        }
+
+        getCell(addressOrRow, maybeCol) {
+          const pos = typeof addressOrRow === "number"
+            ? { row: addressOrRow, col: maybeCol }
+            : splitAddress(addressOrRow);
+          const key = `${pos.row}:${pos.col}`;
+          if (!this._cells.has(key)) this._cells.set(key, new SimpleCell(pos.row, pos.col));
+          return this._cells.get(key);
+        }
+
+        mergeCells(range) {
+          if (!this._merges.includes(range)) this._merges.push(range);
+        }
+      }
+
+      class SimpleWorkbook {
+        constructor() {
+          this.worksheets = [];
+          this.creator = "";
+          this.created = new Date();
+          this.calcProperties = {};
+          this.xlsx = {
+            writeBuffer: async () => this._writeBuffer()
+          };
+        }
+
+        addWorksheet(name) {
+          const ws = new SimpleWorksheet(name);
+          this.worksheets.push(ws);
+          return ws;
+        }
+
+        async _writeBuffer() {
+          const zip = new JSZip();
+          zip.file("[Content_Types].xml", this._contentTypes());
+          zip.folder("_rels").file(".rels", this._rootRels());
+          zip.folder("xl").file("workbook.xml", this._workbookXml());
+          zip.folder("xl").file("styles.xml", this._stylesXml());
+          zip.folder("xl").folder("_rels").file("workbook.xml.rels", this._workbookRels());
+          const sheetFolder = zip.folder("xl").folder("worksheets");
+          this.worksheets.forEach((ws, index) => sheetFolder.file(`sheet${index + 1}.xml`, this._sheetXml(ws)));
+          return zip.generateAsync({ type: "arraybuffer" });
+        }
+
+        _contentTypes() {
+          const sheets = this.worksheets.map((_, index) =>
+            `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+          ).join("");
+          return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+${sheets}
+</Types>`;
+        }
+
+        _rootRels() {
+          return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+        }
+
+        _workbookXml() {
+          const sheets = this.worksheets.map((ws, index) =>
+            `<sheet name="${xmlEscape(ws.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`
+          ).join("");
+          return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets>${sheets}</sheets>
+<calcPr fullCalcOnLoad="1"/>
+</workbook>`;
+        }
+
+        _workbookRels() {
+          const sheets = this.worksheets.map((_, index) =>
+            `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`
+          ).join("");
+          const styleId = this.worksheets.length + 1;
+          return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+${sheets}
+<Relationship Id="rId${styleId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`;
+        }
+
+        _stylesXml() {
+          return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<fonts count="2">
+<font><sz val="11"/><name val="標楷體"/><family val="4"/><charset val="136"/></font>
+<font><b/><sz val="11"/><name val="標楷體"/><family val="4"/><charset val="136"/></font>
+</fonts>
+<fills count="3">
+<fill><patternFill patternType="none"/></fill>
+<fill><patternFill patternType="gray125"/></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFD9FFFF"/><bgColor indexed="64"/></patternFill></fill>
+</fills>
+<borders count="2">
+<border><left/><right/><top/><bottom/><diagonal/></border>
+<border><left style="dashed"><color indexed="64"/></left><right style="dashed"><color indexed="64"/></right><top style="dashed"><color indexed="64"/></top><bottom style="dashed"><color indexed="64"/></bottom><diagonal/></border>
+</borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="8">
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+<xf numFmtId="0" fontId="0" fillId="0" borderId="1" applyAlignment="1" applyBorder="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="3" fontId="0" fillId="0" borderId="1" applyAlignment="1" applyBorder="1" applyNumberFormat="1"><alignment horizontal="right" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="0" fontId="1" fillId="0" borderId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="3" fontId="0" fillId="0" borderId="0" applyAlignment="1" applyNumberFormat="1"><alignment horizontal="right" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="3" fontId="0" fillId="2" borderId="1" applyAlignment="1" applyBorder="1" applyFill="1" applyNumberFormat="1"><alignment horizontal="right" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="0" fontId="0" fillId="2" borderId="1" applyAlignment="1" applyBorder="1" applyFill="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+</cellXfs>
+<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`;
+        }
+
+        _sheetXml(ws) {
+          const maxRow = Math.max(1, ...[...ws._cells.values()].map((cell) => cell.row), ...ws._rows.keys());
+          const maxCol = Math.max(1, ...[...ws._cells.values()].map((cell) => cell.col), ws.columns.length);
+          const dimension = `A1:${colLetter(maxCol)}${maxRow}`;
+          const cols = ws.columns.map((col, index) => {
+            const width = typeof col === "number" ? col : col?.width;
+            return width ? `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>` : "";
+          }).join("");
+          const rows = [];
+          for (let r = 1; r <= maxRow; r++) {
+            const row = ws._rows.get(r);
+            const cells = [];
+            for (let c = 1; c <= maxCol; c++) {
+              const cell = ws._cells.get(`${r}:${c}`);
+              if (!cell || this._isEmptyUnstyled(cell)) continue;
+              cells.push(this._cellXml(cell));
+            }
+            const height = row?.height ? ` ht="${row.height}" customHeight="1"` : "";
+            if (cells.length || height) rows.push(`<row r="${r}"${height}>${cells.join("")}</row>`);
+          }
+          const merges = ws._merges.length
+            ? `<mergeCells count="${ws._merges.length}">${ws._merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells>`
+            : "";
+          const showGridLines = ws.views?.[0]?.showGridLines === false ? "0" : "1";
+          return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<dimension ref="${dimension}"/>
+<sheetViews><sheetView workbookViewId="0" showGridLines="${showGridLines}"/></sheetViews>
+<sheetFormatPr defaultRowHeight="18"/>
+${cols ? `<cols>${cols}</cols>` : ""}
+<sheetData>${rows.join("")}</sheetData>
+${merges}
+<pageSetup orientation="${ws.pageSetup?.orientation || "portrait"}"/>
+</worksheet>`;
+        }
+
+        _cellXml(cell) {
+          const ref = `${colLetter(cell.col)}${cell.row}`;
+          const value = cell.value;
+          const styleId = this._styleId(cell);
+          if (value && typeof value === "object" && "formula" in value) {
+            const result = value.result ?? 0;
+            return `<c r="${ref}" s="${styleId}"><f>${xmlEscape(value.formula)}</f><v>${toNumber(result)}</v></c>`;
+          }
+          if (typeof value === "number") return `<c r="${ref}" s="${styleId}"><v>${value}</v></c>`;
+          if (value === null || value === undefined || value === "") return `<c r="${ref}" s="${styleId}"/>`;
+          return `<c r="${ref}" s="${styleId}" t="inlineStr"><is><t>${xmlEscape(value)}</t></is></c>`;
+        }
+
+        _isEmptyUnstyled(cell) {
+          const value = cell.value;
+          const empty = value === null || value === undefined || value === "";
+          return empty && !cell.border && !cell.fill && !cell.font?.bold && !cell.numFmt;
+        }
+
+        _styleId(cell) {
+          const hasBorder = !!cell.border;
+          const hasFill = !!cell.fill;
+          const isBold = !!cell.font?.bold;
+          const horizontal = cell.alignment?.horizontal || "";
+          const isNumber = typeof cell.value === "number" || (cell.value && typeof cell.value === "object" && "formula" in cell.value) || !!cell.numFmt;
+          if (hasFill && isNumber) return 6;
+          if (hasFill) return 7;
+          if (hasBorder && isNumber) return 2;
+          if (hasBorder) return 1;
+          if (isBold) return 3;
+          if (horizontal === "left") return 4;
+          if (isNumber) return 5;
+          return 0;
+        }
+      }
+
+      window.ExcelJS = { Workbook: SimpleWorkbook };
+    }
+
+    const $ = (id) => document.getElementById(id);
+    const state = { rows: [], processing: false, previewTab: "ap8" };
+    const amountFields = [
+      "taxable3", "taxable2", "zeroDirect", "zeroOther", "exempt", "other",
+      "special", "salesTotal", "salesReturns", "inputGross", "fixedAsset",
+      "inputReturns", "fixedAssetReturns", "importExempt"
+    ];
+
+    function updateComponentStatus() {
+      installSimpleExcelJS();
+      const ready = {
+        pdf: !!window.pdfjsLib,
+        ocr: !!window.Tesseract,
+        zip: !!window.JSZip,
+        excel: !!window.ExcelJS
+      };
+      if (ready.pdf && ready.zip && ready.excel) {
+        if (!state.processing) $("parseState").textContent = "可讀取";
+      } else {
+        const missing = [];
+        if (!ready.pdf) missing.push("PDF");
+        if (!ready.zip || !ready.excel) missing.push("Excel");
+        if (!ready.ocr) missing.push("OCR");
+        if (!state.processing) $("parseState").textContent = `載入中：${missing.join("、")}`;
+      }
+      $("parseBtn").disabled = state.processing;
+      return ready;
+    }
+
+    installSimpleExcelJS();
+    window.addEventListener("load", updateComponentStatus);
+    window.addEventListener("pdfjs-ready", () => {
+      updateComponentStatus();
+    });
+    window.setTimeout(updateComponentStatus, 300);
+    window.setTimeout(updateComponentStatus, 1500);
+    window.setTimeout(updateComponentStatus, 3500);
+
+    function waitForPdfjs(timeoutMs = 8000) {
+      if (window.pdfjsLib) return Promise.resolve();
+      return new Promise((resolve, reject) => {
+        const timer = window.setTimeout(() => {
+          window.removeEventListener("pdfjs-ready", onReady);
+          reject(new Error("PDF 元件尚未載入完成"));
+        }, timeoutMs);
+        function onReady() {
+          window.clearTimeout(timer);
+          resolve();
+        }
+        window.addEventListener("pdfjs-ready", onReady, { once: true });
+      });
+    }
+
+    function withTimeout(promise, timeoutMs, message) {
+      let timer;
+      const timeout = new Promise((_, reject) => {
+        timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+      });
+      return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer));
+    }
+
+    function log(message) {
+      $("log").textContent = message;
+    }
+
+    function appendLog(message) {
+      $("log").textContent += "\n" + message;
+    }
+
+    function toNumber(value) {
+      if (value === undefined || value === null || value === "") return 0;
+      const cleaned = String(value).replace(/[,\s]/g, "");
+      const n = Number(cleaned);
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    function fmt(value) {
+      return toNumber(value).toLocaleString("en-US");
+    }
+
+    function normalizeText(text) {
+      const full = "０１２３４５６７８９，．－";
+      const half = "0123456789,.-";
+      let out = String(text || "").replace(/[０-９，．－]/g, (ch) => half[full.indexOf(ch)] || ch);
+      out = out.replace(/\u00a0/g, " ").replace(/[–—~～至]/g, "-");
+      return collapseRepeatedRuns(out);
+    }
+
+    function collapseRepeatedRuns(text) {
+      const runs = [];
+      for (let i = 0; i < text.length;) {
+        const ch = text[i];
+        let j = i + 1;
+        while (j < text.length && text[j] === ch) j++;
+        runs.push([ch, j - i]);
+        i = j;
+      }
+      const likelyPdfDuplication = runs.filter(([ch, run]) => run >= 4 && !/[0-9,.\-\s]/.test(ch)).length >= 3;
+      if (!likelyPdfDuplication) return text;
+      return runs.map(([ch, run]) => {
+        if (run >= 4 && !/\s/.test(ch)) return ch.repeat(Math.max(1, Math.round(run / 4)));
+        return ch.repeat(run);
+      }).join("");
+    }
+
+    function money(match, group = 1) {
+      return match ? toNumber(match[group]) : 0;
+    }
+
+    function first(text, patterns) {
+      const compact = String(text || "").replace(/\s+/g, "");
+      for (const candidate of [text, compact]) {
+        for (const pattern of patterns) {
+          const match = String(candidate || "").match(pattern);
+          if (match) return money(match);
+        }
+      }
+      return 0;
+    }
+
+    function pair(text, patterns) {
+      const compact = String(text || "").replace(/\s+/g, "");
+      for (const candidate of [text, compact]) {
+        for (const pattern of patterns) {
+          const match = String(candidate || "").match(pattern);
+          if (match) return [money(match, 1), money(match, 2)];
+        }
+      }
+      return [0, 0];
+    }
+
+    function readCompany(source, compact, fileName) {
+      const patterns = [
+        /營\s*業\s*人\s*名\s*稱\s*([^\n\r]+?)(?:統\s*一\s*編\s*號|稅\s*籍\s*編\s*號|負\s*責\s*人|營\s*業\s*地\s*址|申\s*報\s*所\s*屬)/,
+        /(?:營業人名稱|公司名稱)(.+?)(?:統一編號|稅籍編號|負責人|營業地址|申報所屬)/,
+        /(.+?(?:有限公司|股份有限公司|企業社|商行))(?:\d{2,3}年|\d{2,3}\s*年)/
+      ];
+      for (const pattern of patterns) {
+        const match = source.match(pattern) || compact.match(pattern);
+        if (match) {
+          const candidate = match[1].replace(/\s+/g, "").replace(/[：:]/g, "").trim();
+          const legalName = candidate.match(/^(.+?(?:股份有限公司|有限公司|企業社|商行|工作室|事務所))/);
+          return legalName ? legalName[1] : candidate;
+        }
+      }
+      const fromName = String(fileName || "").match(/^(.+?)-?\d{2,3}年/);
+      return fromName ? fromName[1].replace(/\s+/g, "").trim() : "";
+    }
+
+    function readPeriod(source, compact, fileName) {
+      const name = String(fileName || "").replace(/\s+/g, "");
+      const patterns = [
+        /(\d{2,3})\s*年\s*(\d{1,2})\s*-\s*(\d{1,2})\s*月/,
+        /(\d{2,3})年?(\d{2})-(\d{2})月/,
+        /申報所屬年月[:：]?(\d{2,3})年?(\d{1,2})-(\d{1,2})月/,
+        /(\d{2,3})(\d{2})-(\d{2})/
+      ];
+      for (const pattern of patterns) {
+        const match = source.match(pattern) || compact.match(pattern) || name.match(pattern);
+        if (match) {
+          return {
+            rocYear: String(Number(match[1])),
+            startMonth: Number(match[2]),
+            endMonth: Number(match[3])
+          };
+        }
+      }
+      return { rocYear: "", startMonth: "", endMonth: "" };
+    }
+
+    function parseDeclaration(rawText, fileName) {
+      const source = normalizeText(rawText);
+      const compact = source.replace(/\s+/g, "");
+      const company = readCompany(source, compact, fileName);
+      const period = readPeriod(source, compact, fileName);
+
+      const taxableInvoice = first(source, [
+        /三\s*聯\s*式\s*發\s*票[、,\s]*電\s*子\s*計\s*算\s*機\s*發\s*票\s+1\s+([0-9,]+)\s+2\s+/s,
+        /三聯式發票、?電子計算機發票1([0-9,]+)2/s
+      ]);
+      const taxableCash = first(source, [
+        /收\s*銀\s*機\s*發\s*票\s*\(?三\s*聯\s*式\)?及\s*電\s*子\s*發\s*票\s+5\s+([0-9,]+)\s+6\s+/s,
+        /收銀機發票\(?三聯式\)?及電子發票5([0-9,]+)6/s
+      ]);
+      const twoPartInvoice = first(source, [
+        /二\s*聯\s*式\s*發\s*票[、,\s]*收\s*銀\s*機\s*發\s*票\s*\(?二\s*聯\s*式\)?\s+9\s+([0-9,]+)\s+10\s+/s,
+        /二聯式發票、?收銀機發票\(?二聯式\)?9([0-9,]+)10/s
+      ]);
+      const noInvoice = first(source, [
+        /免\s*用\s*發\s*票\s+13\s+([0-9,]+)\s+14\s+/s,
+        /免用發票13([0-9,]+)14/s
+      ]);
+      const returns = first(source, [
+        /減\s*[:：]?\s*退\s*回\s*及\s*折\s*讓\s+17\s+([0-9,]+)\s+18\s+/s,
+        /退回及折讓17([0-9,]+)18/s
+      ]);
+      const netSales = first(source, [
+        /合\s*計\s+21\s+\(?1\)?\s+([0-9,]+)\s+22\s+/s,
+        /合計21\(?1\)?([0-9,]+)22/s
+      ]);
+
+      const invoice = pair(source, [
+        /統\s*一\s*發\s*票\s*扣\s*抵\s*聯\s*進\s*貨\s*及\s*費\s*用\s+28\s+([0-9,]+)\s+29\s+([0-9,]+)/s,
+        /統一發票扣抵聯進貨及費用28([0-9,]+)29([0-9,]+)/s
+      ]);
+      const invoiceFa = pair(source, [
+        /統\s*一\s*發\s*票\s*扣\s*抵\s*聯.*?固\s*定\s*資\s*產\s+30\s+([0-9,]+)\s+31\s+([0-9,]+)/s,
+        /固定資產30([0-9,]+)31([0-9,]+)/s
+      ]);
+      const cash = pair(source, [
+        /三\s*聯\s*式\s*收\s*銀\s*機.*?進\s*貨\s*及\s*費\s*用\s+32\s+([0-9,]+)\s+33\s+([0-9,]+)/s,
+        /三聯式收銀機.*?進貨及費用32([0-9,]+)33([0-9,]+)/s
+      ]);
+      const cashFa = pair(source, [
+        /三\s*聯\s*式\s*收\s*銀\s*機.*?固\s*定\s*資\s*產\s+34\s+([0-9,]+)\s+35\s+([0-9,]+)/s,
+        /三聯式收銀機.*?固定資產34([0-9,]+)35([0-9,]+)/s
+      ]);
+      const other = pair(source, [
+        /載\s*有\s*稅\s*額\s*之\s*其\s*他\s*憑\s*證\s*進\s*貨\s*及\s*費\s*用\s+36\s+([0-9,]+)\s+37\s+([0-9,]+)/s,
+        /載有稅額之其他憑證進貨及費用36([0-9,]+)37([0-9,]+)/s
+      ]);
+      const otherFa = pair(source, [
+        /載\s*有\s*稅\s*額\s*之\s*其\s*他\s*憑\s*證.*?固\s*定\s*資\s*產\s+38\s+([0-9,]+)\s+39\s+([0-9,]+)/s,
+        /載有稅額之其他憑證.*?固定資產38([0-9,]+)39([0-9,]+)/s
+      ]);
+      const inputReturn = pair(source, [
+        /進\s*貨\s*及\s*費\s*用\s+40\s+([0-9,]+)\s+41\s+([0-9,]+)/s,
+        /進貨及費用40([0-9,]+)41([0-9,]+)/s
+      ]);
+      const fixedReturn = pair(source, [
+        /固\s*定\s*資\s*產\s+42\s+([0-9,]+)\s+43\s+([0-9,]+)/s,
+        /固定資產42([0-9,]+)43([0-9,]+)/s
+      ]);
+      const customs = pair(source, [
+        /進\s*貨\s*及\s*費\s*用\s+78\s+([0-9,]+)\s+79\s+([0-9,]+).*?海\s*關\s*代\s*徵/s,
+        /進貨及費用78([0-9,]+)79([0-9,]+).*?海關代徵/s
+      ]);
+      const customsFa = pair(source, [
+        /進\s*項\s*固\s*定\s*資\s*產\s+80\s+([0-9,]+)\s+81\s+([0-9,]+)/s,
+        /進項固定資產80([0-9,]+)81([0-9,]+)/s
+      ]);
+      const importExempt = first(source, [
+        /進\s*口\s*免\s*稅\s*貨\s*物\s+73\s+([0-9,]+)\s+元/s,
+        /進口免稅貨物73([0-9,]+)元/s
+      ]);
+
+      const taxable3 = taxableInvoice + taxableCash;
+      const taxable2 = twoPartInvoice + noInvoice;
+      const inputGross = invoice[0] + cash[0] + other[0] + customs[0];
+      const fixedAsset = invoiceFa[0] + cashFa[0] + otherFa[0] + customsFa[0];
+      const grossSalesFromItems = taxable3 + taxable2;
+      const salesTotal = grossSalesFromItems || (netSales ? netSales + returns : 0);
+
+      const issues = [];
+      if (!company) issues.push("公司未偵測");
+      if (!period.rocYear || !period.startMonth) issues.push("期別未偵測");
+      if (!salesTotal && !inputGross && !fixedAsset) issues.push("金額未偵測");
+
+      return {
+        fileName,
+        company,
+        rocYear: period.rocYear,
+        startMonth: period.startMonth,
+        endMonth: period.endMonth,
+        taxable3,
+        taxable2,
+        zeroDirect: 0,
+        zeroOther: 0,
+        exempt: 0,
+        other: 0,
+        special: 0,
+        salesTotal,
+        salesReturns: returns,
+        inputGross,
+        fixedAsset,
+        inputReturns: inputReturn[0],
+        fixedAssetReturns: fixedReturn[0],
+        importExempt,
+        status: issues.length ? issues.join("、") : "OK"
+      };
+    }
+
+    async function extractPdfText(file, useOcr) {
+      const bytes = await file.arrayBuffer();
+      const pdf = await withTimeout(
+        window.pdfjsLib.getDocument({ data: bytes }).promise,
+        20000,
+        `PDF 讀取逾時：${file.name}`
+      );
+      let text = "";
+      for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
+        const page = await pdf.getPage(pageNo);
+        const content = await page.getTextContent();
+        text += "\n" + content.items.map((item) => item.str).join(" ");
+      }
+      const firstPass = parseDeclaration(text, file.name);
+      const lowText = text.replace(/\s/g, "").length < 250;
+      const needsOcr = useOcr && (lowText || firstPass.status.includes("金額未偵測"));
+      if (!needsOcr) return { text, usedOcr: false };
+
+      let ocrText = "";
+      for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
+        const page = await pdf.getPage(pageNo);
+        const viewport = page.getViewport({ scale: 2.2 });
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await withTimeout(page.render({ canvasContext: context, viewport }).promise, 20000, `OCR 前置轉圖逾時：${file.name}`);
+        const result = await withTimeout(Tesseract.recognize(canvas, "chi_tra+eng", {
+          workerPath: "./assets/tesseract-worker.min.js",
+          corePath: "./assets/tesseract-core-simd-lstm.wasm.js",
+          logger: (m) => {
+            if (m.status === "recognizing text") {
+              $("parseState").textContent = `OCR ${Math.round((m.progress || 0) * 100)}%`;
+            }
+          }
+        }), 90000, `OCR 逾時：${file.name}`);
+        ocrText += "\n" + result.data.text;
+      }
+      return { text: ocrText || text, usedOcr: true };
+    }
+
+    function sortedRows() {
+      return [...state.rows].sort((a, b) => Number(a.startMonth || 99) - Number(b.startMonth || 99));
+    }
+
+    function totals() {
+      return state.rows.reduce((acc, row) => {
+        acc.sales += toNumber(row.salesTotal);
+        acc.salesReturns += toNumber(row.salesReturns);
+        acc.inputGross += toNumber(row.inputGross);
+        acc.inputReturns += toNumber(row.inputReturns);
+        acc.fixedAsset += toNumber(row.fixedAsset);
+        acc.fixedAssetReturns += toNumber(row.fixedAssetReturns);
+        return acc;
+      }, { sales: 0, salesReturns: 0, inputGross: 0, inputReturns: 0, fixedAsset: 0, fixedAssetReturns: 0 });
+    }
+
+    function refreshTotals() {
+      const t = totals();
+      $("totalSales").textContent = fmt(t.sales);
+      $("totalSalesReturns").textContent = fmt(t.salesReturns);
+      $("totalInputs").textContent = fmt(t.inputGross + t.fixedAsset);
+      $("totalInputNet").textContent = fmt(t.inputGross + t.fixedAsset - t.inputReturns - t.fixedAssetReturns);
+      renderExcelPreview();
+    }
+
+    function htmlEscape(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function previewCompanyName() {
+      return $("companyName").value.trim() || state.rows.find((row) => row.company)?.company || "未偵測公司";
+    }
+
+    function previewYear() {
+      return $("rocYear").value.trim() || state.rows.find((row) => row.rocYear)?.rocYear || "未偵測年度";
+    }
+
+    function rowForMonth(month) {
+      return sortedRows().find((row) => Number(row.startMonth) === month) || null;
+    }
+
+    function numberCell(value) {
+      return `<td class="num">${fmt(value)}</td>`;
+    }
+
+    function renderPreviewShell() {
+      $("previewAp8Btn").classList.toggle("active", state.previewTab === "ap8");
+      $("previewAp81Btn").classList.toggle("active", state.previewTab === "ap81");
+      if (!state.rows.length) {
+        $("previewFileName").textContent = "尚未產生預覽";
+        $("previewMeta").textContent = "讀取 PDF 後會在這裡顯示將輸出的 Excel 內容。";
+        $("excelPreview").className = "preview-empty";
+        $("excelPreview").innerHTML = "請先上傳 PDF 並按「讀取並加總」。";
+        return false;
+      }
+      const company = previewCompanyName();
+      const year = previewYear();
+      $("previewFileName").textContent = `${company}${year}年AP8及AP8-1.xlsx`;
+      $("previewMeta").textContent = `${state.rows.length} 期資料，右側為下載前預覽。`;
+      $("excelPreview").className = "preview-scroll";
+      return true;
+    }
+
+    function renderAp8Preview() {
+      const t = totals();
+      const salesTotal = t.sales;
+      $("excelPreview").innerHTML = `
+        <table class="preview-compact">
+          <thead>
+            <tr><th colspan="2">${htmlEscape(previewCompanyName())}</th></tr>
+            <tr><th colspan="2">AP8 營業收入帳冊金額與申報銷售金額調節表</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>本期開立發票金額</td>${numberCell(salesTotal)}</tr>
+            <tr><td>加項金額</td>${numberCell(0)}</tr>
+            <tr><td>減項金額</td>${numberCell(0)}</tr>
+            <tr><td>營業收入</td>${numberCell(salesTotal)}</tr>
+            <tr><td>帳列營業收入</td>${numberCell(salesTotal)}</tr>
+            <tr><td>調節後尚差異</td>${numberCell(0)}</tr>
+          </tbody>
+        </table>
+      `;
+    }
+
+    function renderAp81Preview() {
+      const months = [1, 3, 5, 7, 9, 11];
+      const rows = months.map((month) => rowForMonth(month));
+      const salesTotal = rows.reduce((sum, row) => sum + toNumber(row?.salesTotal), 0);
+      const salesReturns = rows.reduce((sum, row) => sum + toNumber(row?.salesReturns), 0);
+      const inputGross = rows.reduce((sum, row) => sum + toNumber(row?.inputGross), 0);
+      const fixedAsset = rows.reduce((sum, row) => sum + toNumber(row?.fixedAsset), 0);
+      const inputReturns = rows.reduce((sum, row) => sum + toNumber(row?.inputReturns), 0);
+      const fixedAssetReturns = rows.reduce((sum, row) => sum + toNumber(row?.fixedAssetReturns), 0);
+      const importExempt = rows.reduce((sum, row) => sum + toNumber(row?.importExempt), 0);
+      const salesRows = months.map((month, index) => {
+        const row = rows[index];
+        return `<tr>
+          <td>${month} 月</td>
+          ${numberCell(row?.taxable3)}
+          ${numberCell(row?.taxable2)}
+          ${numberCell(row?.zeroDirect)}
+          ${numberCell(row?.zeroOther)}
+          ${numberCell(row?.exempt)}
+          ${numberCell(row?.other)}
+          ${numberCell(row?.special)}
+          ${numberCell(row?.salesTotal)}
+          ${numberCell(row?.salesReturns)}
+        </tr>`;
+      }).join("");
+      const inputRows = months.map((month, index) => {
+        const row = rows[index];
+        const netInput = toNumber(row?.inputGross) - toNumber(row?.inputReturns);
+        const netFixed = toNumber(row?.fixedAsset) - toNumber(row?.fixedAssetReturns);
+        return `<tr>
+          <td>${month} 月</td>
+          ${numberCell(row?.inputGross)}
+          ${numberCell(row?.fixedAsset)}
+          ${numberCell(row?.inputReturns)}
+          ${numberCell(row?.fixedAssetReturns)}
+          ${numberCell(netInput)}
+          ${numberCell(netFixed)}
+          ${numberCell(row?.importExempt)}
+        </tr>`;
+      }).join("");
+      $("excelPreview").innerHTML = `
+        <table class="preview-wide">
+          <thead>
+            <tr><th colspan="10">AP8-1 總分支機構申報營業稅銷售額明細表</th></tr>
+            <tr>
+              <th>月份</th><th>三聯式</th><th>二聯式</th><th>零稅率外銷</th><th>零稅率其他</th>
+              <th>免稅</th><th>其他</th><th>特種稅額</th><th>銷售額合計</th><th>退回折讓</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${salesRows}
+            <tr><th>合計</th>${numberCell(rows.reduce((s, r) => s + toNumber(r?.taxable3), 0))}${numberCell(rows.reduce((s, r) => s + toNumber(r?.taxable2), 0))}${numberCell(rows.reduce((s, r) => s + toNumber(r?.zeroDirect), 0))}${numberCell(rows.reduce((s, r) => s + toNumber(r?.zeroOther), 0))}${numberCell(rows.reduce((s, r) => s + toNumber(r?.exempt), 0))}${numberCell(rows.reduce((s, r) => s + toNumber(r?.other), 0))}${numberCell(rows.reduce((s, r) => s + toNumber(r?.special), 0))}${numberCell(salesTotal)}${numberCell(salesReturns)}</tr>
+          </tbody>
+        </table>
+        <table class="preview-wide">
+          <thead>
+            <tr><th colspan="8">已申報扣抵進項稅額之憑證及進口免稅貨物金額統計表</th></tr>
+            <tr>
+              <th>月份</th><th>進貨及費用</th><th>固定資產</th><th>進項退回</th><th>固定資產退回</th>
+              <th>進貨淨額</th><th>固定資產淨額</th><th>進口免稅貨物</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${inputRows}
+            <tr><th>合計</th>${numberCell(inputGross)}${numberCell(fixedAsset)}${numberCell(inputReturns)}${numberCell(fixedAssetReturns)}${numberCell(inputGross - inputReturns)}${numberCell(fixedAsset - fixedAssetReturns)}${numberCell(importExempt)}</tr>
+          </tbody>
+        </table>
+      `;
+    }
+
+    function renderExcelPreview() {
+      if (!document.getElementById("excelPreview")) return;
+      if (!renderPreviewShell()) return;
+      if (state.previewTab === "ap8") renderAp8Preview();
+      else renderAp81Preview();
+    }
+
+    function renderRows() {
+      const tbody = $("resultTable").querySelector("tbody");
+      tbody.innerHTML = "";
+      for (const [index, row] of state.rows.entries()) {
+        const tr = document.createElement("tr");
+        const period = row.rocYear && row.startMonth ? `${row.rocYear}/${row.startMonth}-${row.endMonth || ""}` : "";
+        const statusClass = row.status === "OK" || row.status === "OK（OCR）" ? "ok" : "warn";
+        tr.innerHTML = `
+          <td>${period}</td>
+          <td>${row.fileName || "手動新增"}</td>
+          ${amountFields.map((field) => `<td><input data-index="${index}" data-field="${field}" value="${fmt(row[field])}"></td>`).join("")}
+          <td class="${statusClass}">${row.status || ""}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+      tbody.querySelectorAll("input").forEach((input) => {
+        input.addEventListener("change", () => {
+          const row = state.rows[Number(input.dataset.index)];
+          row[input.dataset.field] = toNumber(input.value);
+          input.value = fmt(row[input.dataset.field]);
+          refreshTotals();
+        });
+      });
+      $("exportBtn").disabled = state.rows.length === 0;
+      refreshTotals();
+    }
+
+    function syncMeta() {
+      const company = state.rows.find((row) => row.company)?.company || "";
+      const year = state.rows.find((row) => row.rocYear)?.rocYear || "";
+      if (!$("companyName").value && company) $("companyName").value = company;
+      if (!$("rocYear").value && year) $("rocYear").value = year;
+      renderExcelPreview();
+    }
+
+    function addManualRow() {
+      const year = $("rocYear").value.trim();
+      state.rows.push({
+        fileName: "",
+        company: $("companyName").value.trim(),
+        rocYear: year,
+        startMonth: "",
+        endMonth: "",
+        taxable3: 0,
+        taxable2: 0,
+        zeroDirect: 0,
+        zeroOther: 0,
+        exempt: 0,
+        other: 0,
+        special: 0,
+        salesTotal: 0,
+        salesReturns: 0,
+        inputGross: 0,
+        fixedAsset: 0,
+        inputReturns: 0,
+        fixedAssetReturns: 0,
+        importExempt: 0,
+        status: "手動"
+      });
+      renderRows();
+    }
+
+    function colLetter(index) {
+      let letter = "";
+      while (index > 0) {
+        const mod = (index - 1) % 26;
+        letter = String.fromCharCode(65 + mod) + letter;
+        index = Math.floor((index - mod) / 26);
+      }
+      return letter;
+    }
+
+    function setBorder(cell, style = "dashed") {
+      cell.border = {
+        top: { style },
+        left: { style },
+        bottom: { style },
+        right: { style }
+      };
+    }
+
+    function styleRange(ws, fromRow, fromCol, toRow, toCol, fn) {
+      for (let row = fromRow; row <= toRow; row++) {
+        for (let col = fromCol; col <= toCol; col++) fn(ws.getCell(row, col), row, col);
+      }
+    }
+
+    function mergeSafe(ws, range) {
+      try { ws.mergeCells(range); } catch (_) { /* already merged */ }
+    }
+
+    function setText(cell, value, options = {}) {
+      cell.value = value;
+      cell.font = { name: "標楷體", size: options.size || 11, bold: !!options.bold };
+      cell.alignment = {
+        horizontal: options.horizontal || "center",
+        vertical: "middle",
+        wrapText: options.wrap !== false
+      };
+    }
+
+    function setNumber(cell, value) {
+      cell.value = toNumber(value);
+      cell.numFmt = "#,##0";
+      cell.alignment = { horizontal: "right", vertical: "middle" };
+    }
+
+    function setFormula(cell, formula, result = 0) {
+      cell.value = { formula, result: toNumber(result) };
+      cell.numFmt = "#,##0";
+      cell.alignment = { horizontal: "right", vertical: "middle" };
+    }
+
+    function monthRow(startMonth, base) {
+      return { 1: base, 3: base + 2, 5: base + 4, 7: base + 6, 9: base + 8, 11: base + 10 }[Number(startMonth)] || null;
+    }
+
+    function applyRowHeights(ws, heights) {
+      for (const [row, height] of Object.entries(heights)) ws.getRow(Number(row)).height = height;
+    }
+
+    function buildAp81(workbook, rows, companyName, fontSize) {
+      const ws = workbook.addWorksheet("AP8-1");
+      ws.pageSetup = { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 1 };
+      ws.columns = [
+        6.375, 5.25, 6.625, 5.25, 5.25, 5.25, 5.25, 5.25, 5.25, 5.125,
+        5.125, 5.25, 5.5, 5.25, 5.5, 5, 4.375, 5.25, 6.875, 11.75
+      ].map((width) => ({ width }));
+      applyRowHeights(ws, {
+        1: 21, 2: 11.25, 3: 22.5, 4: 18.75, 5: 18.75, 6: 18.75, 7: 18.75,
+        8: 18.75, 9: 18.75, 10: 18.75, 11: 18.75, 12: 18.75, 13: 18.75,
+        14: 18.75, 15: 18.75, 16: 18.75, 17: 18.75, 18: 18.75, 19: 8.25,
+        20: 14.25, 21: 14.25, 22: 14.25, 24: 15.75, 28: 36.75, 29: 10.5,
+        30: 18.75, 31: 18.75, 32: 18, 33: 18, 34: 18, 35: 18, 36: 18,
+        37: 18, 38: 18, 39: 18, 40: 18, 41: 18, 42: 18, 43: 18, 44: 18,
+        45: 15, 46: 27.75, 47: 17.25, 48: 11.25, 49: 16.5, 52: 19.5
+      });
+
+      mergeSafe(ws, "A1:T1");
+      setText(ws.getCell("A1"), "總分支機構申報營業稅銷售額明細表", { size: 16, bold: true });
+      mergeSafe(ws, "A3:A5"); mergeSafe(ws, "B3:M3"); mergeSafe(ws, "N3:O5"); mergeSafe(ws, "P3:Q5"); mergeSafe(ws, "R3:S5"); mergeSafe(ws, "T3:T5");
+      mergeSafe(ws, "B4:E4"); mergeSafe(ws, "F4:I4"); mergeSafe(ws, "J4:K5"); mergeSafe(ws, "L4:M5");
+      mergeSafe(ws, "B5:C5"); mergeSafe(ws, "D5:E5"); mergeSafe(ws, "F5:G5"); mergeSafe(ws, "H5:I5");
+      setText(ws.getCell("A3"), "月份");
+      setText(ws.getCell("B3"), "一、銷售額");
+      setText(ws.getCell("N3"), "特種稅額");
+      setText(ws.getCell("P3"), "免稅銷售額");
+      setText(ws.getCell("R3"), "銷售額合計");
+      setText(ws.getCell("T3"), "銷貨退回及折讓");
+      setText(ws.getCell("B4"), "應稅銷售額");
+      setText(ws.getCell("F4"), "零稅率銷售額");
+      setText(ws.getCell("J4"), "免稅");
+      setText(ws.getCell("L4"), "其他");
+      setText(ws.getCell("B5"), "三聯式");
+      setText(ws.getCell("D5"), "二聯式");
+      setText(ws.getCell("F5"), "外銷");
+      setText(ws.getCell("H5"), "其他");
+      for (let m = 1; m <= 12; m++) setText(ws.getCell(`A${m + 5}`), `${m} 月`);
+      setText(ws.getCell("A18"), "合計");
+
+      const salesTotals = { B: 0, D: 0, F: 0, H: 0, J: 0, L: 0, N: 0, P: 0, R: 0, T: 0 };
+      for (const row of rows) {
+        const r = monthRow(row.startMonth, 6);
+        if (!r) continue;
+        const values = {
+          B: row.taxable3, D: row.taxable2, F: row.zeroDirect, H: row.zeroOther,
+          J: row.exempt, L: row.other, N: row.special, P: 0,
+          R: row.salesTotal, T: row.salesReturns
+        };
+        for (const [col, value] of Object.entries(values)) {
+          if (col === "R") setFormula(ws.getCell(`${col}${r}`), `SUM(B${r}:Q${r})`, value);
+          else setNumber(ws.getCell(`${col}${r}`), value);
+          salesTotals[col] += toNumber(value);
+        }
+      }
+      for (const col of Object.keys(salesTotals)) {
+        setFormula(ws.getCell(`${col}18`), `SUM(${col}6:${col}17)`, salesTotals[col]);
+      }
+
+      const notes = [
+        "1. 本表係彙總各期申報書之銷售額資料，請與營業稅申報書及帳列資料核對。",
+        "2. 各月份以申報期別起始月份填列，二月、四月、六月、八月、十月、十二月列保留空白。",
+        "3. 特種稅額、銷貨退回及折讓等欄位均由 PDF 偵測結果帶入，可於網頁檢查表手動修正後再產生。",
+        "4. 營業稅銷貨退回及折讓與第 1 頁 02 銷貨退回及 03 銷貨折讓之差異說明："
+      ];
+      notes.forEach((note, i) => {
+        const r = 20 + i;
+        mergeSafe(ws, `A${r}:T${r}`);
+        setText(ws.getCell(`A${r}`), note, { horizontal: "left", size: fontSize });
+      });
+
+      mergeSafe(ws, "A28:T28");
+      setText(ws.getCell("A28"), "已申報扣抵進項稅額之憑證及進口免稅貨物金額統計表", { size: 16, bold: true });
+      mergeSafe(ws, "A30:A31"); mergeSafe(ws, "B30:G30"); mergeSafe(ws, "H30:M30"); mergeSafe(ws, "N30:S30"); mergeSafe(ws, "T30:T31");
+      mergeSafe(ws, "B31:D31"); mergeSafe(ws, "E31:G31"); mergeSafe(ws, "H31:J31"); mergeSafe(ws, "K31:M31"); mergeSafe(ws, "N31:P31"); mergeSafe(ws, "Q31:S31");
+      setText(ws.getCell("A30"), "月份");
+      setText(ws.getCell("B30"), "進項稅額憑證金額");
+      setText(ws.getCell("H30"), "退回及折讓");
+      setText(ws.getCell("N30"), "淨額合計");
+      setText(ws.getCell("T30"), "進口免稅貨物");
+      setText(ws.getCell("B31"), "進貨及費用");
+      setText(ws.getCell("E31"), "固定資產");
+      setText(ws.getCell("H31"), "進貨及費用");
+      setText(ws.getCell("K31"), "固定資產");
+      setText(ws.getCell("N31"), "進貨及費用");
+      setText(ws.getCell("Q31"), "固定資產");
+      for (let m = 1; m <= 12; m++) setText(ws.getCell(`A${m + 31}`), `${m} 月`);
+      setText(ws.getCell("A44"), "合計");
+
+      const inputTotals = { B: 0, E: 0, H: 0, K: 0, N: 0, Q: 0, T: 0 };
+      for (const row of rows) {
+        const r = monthRow(row.startMonth, 32);
+        if (!r) continue;
+        const netInput = toNumber(row.inputGross) - toNumber(row.inputReturns);
+        const netFixed = toNumber(row.fixedAsset) - toNumber(row.fixedAssetReturns);
+        setNumber(ws.getCell(`B${r}`), row.inputGross);
+        setNumber(ws.getCell(`E${r}`), row.fixedAsset);
+        setNumber(ws.getCell(`H${r}`), row.inputReturns);
+        setNumber(ws.getCell(`K${r}`), row.fixedAssetReturns);
+        setFormula(ws.getCell(`N${r}`), `B${r}-H${r}`, netInput);
+        setFormula(ws.getCell(`Q${r}`), `E${r}-K${r}`, netFixed);
+        setNumber(ws.getCell(`T${r}`), row.importExempt);
+        inputTotals.B += toNumber(row.inputGross);
+        inputTotals.E += toNumber(row.fixedAsset);
+        inputTotals.H += toNumber(row.inputReturns);
+        inputTotals.K += toNumber(row.fixedAssetReturns);
+        inputTotals.N += netInput;
+        inputTotals.Q += netFixed;
+        inputTotals.T += toNumber(row.importExempt);
+      }
+      for (const col of Object.keys(inputTotals)) {
+        setFormula(ws.getCell(`${col}44`), `SUM(${col}32:${col}43)`, inputTotals[col]);
+      }
+
+      mergeSafe(ws, "B46:T46"); mergeSafe(ws, "B47:T48"); mergeSafe(ws, "B49:T49");
+      setText(ws.getCell("A46"), "說明：", { horizontal: "left" });
+      setText(ws.getCell("B46"), "1. 進項稅額憑證金額包含統一發票扣抵聯、收銀機發票、其他載有稅額之憑證及海關代徵憑證。", { horizontal: "left" });
+      setText(ws.getCell("B47"), "2. 退回及折讓欄位依申報書進項退回及折讓金額填列，淨額合計由本表自動計算。", { horizontal: "left" });
+      setText(ws.getCell("B49"), "3. 進口免稅貨物金額依申報書相關欄位填列。", { horizontal: "left" });
+      setText(ws.getCell("A52"), "營業人名稱：", { horizontal: "left" });
+      setText(ws.getCell("D52"), companyName, { horizontal: "left" });
+
+      styleRange(ws, 1, 1, 52, 20, (cell) => {
+        cell.font = { ...cell.font, name: "標楷體", size: cell.font?.size || fontSize };
+        cell.alignment = { vertical: "middle", horizontal: cell.alignment?.horizontal || "center", wrapText: true };
+      });
+      styleRange(ws, 3, 1, 18, 20, setBorder);
+      styleRange(ws, 30, 1, 44, 20, setBorder);
+      ws.views = [{ showGridLines: false }];
+    }
+
+    function buildAp8(workbook, rows, companyName, rocYear, fontSize) {
+      const ws = workbook.addWorksheet("AP8");
+      ws.pageSetup = { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 1 };
+      ws.columns = [6.5, 14.75, 16.25, 4.625, 4.625, 19.5, 16.25, 4.625, 4.625, 18.25, 12.375, 13.125].map((width) => ({ width }));
+      applyRowHeights(ws, {
+        1: 19.5, 2: 19.5, 3: 12, 4: 24.75, 5: 27, 6: 30, 7: 30, 8: 30, 9: 30,
+        10: 27.75, 11: 27.75, 12: 27.75, 13: 27.75, 14: 27.75, 15: 27.75,
+        16: 27.75, 17: 27.75, 18: 27.75, 19: 27.75, 20: 27.75, 21: 27.75,
+        22: 27.75, 23: 27.75, 24: 21.75, 25: 21.75, 26: 7.5, 27: 7.5,
+        28: 28.5, 31: 28.5, 33: 28.5, 34: 46.5, 44: 17.25, 45: 17.25
+      });
+      mergeSafe(ws, "C1:G1"); mergeSafe(ws, "C2:G2");
+      setText(ws.getCell("C1"), companyName);
+      setText(ws.getCell("C2"), "營業收入帳冊金額與申報銷售金額調節表");
+      mergeSafe(ws, "A4:A23"); mergeSafe(ws, "B4:E4"); mergeSafe(ws, "F4:I4"); mergeSafe(ws, "J4:J23");
+      setText(ws.getCell("A4"), "開立\n發票\n金額");
+      setText(ws.getCell("B4"), "加項");
+      setText(ws.getCell("F4"), "減項");
+      setText(ws.getCell("J4"), "備註");
+      setText(ws.getCell("B5"), "項別"); setText(ws.getCell("C5"), "金額"); setText(ws.getCell("D5"), "核對相符打勾");
+      setText(ws.getCell("F5"), "項別"); setText(ws.getCell("G5"), "金額"); setText(ws.getCell("H5"), "核對相符打勾");
+
+      const addLabels = {
+        B6: "上期結轉本期預收款", B7: "本期應收未開立發票金額", B8: "分支機構銷貨收入",
+        B9: "寄銷貨收入", B10: "未完工程本期依完工比例法認列之收入",
+        B12: "本期未完工程依完工比例法認列累計收入", B14: "本期未完工程依成本回收法認列累計收入",
+        B16: "什費(稅額調整)", B23: "合計"
+      };
+      const minusLabels = {
+        F6: "本期預收款", F7: "上期應收本期開立發票金額", F8: "預收房屋款折讓",
+        F9: "本期溢開發票金額", F10: "佣金收入", F11: "代付款", F12: "出售下腳廢料",
+        F13: "出售資產", F14: "代收款", F15: "其他收入", F16: "與地主分攤廣告費",
+        F17: "完工工程前期依完工比例法認列之收入", F19: "前期未完工程依完工比例法認列累計收入",
+        F21: "前期未完工程依成本回收法認列累計收入", F23: "合計"
+      };
+      for (const [addr, text] of Object.entries(addLabels)) setText(ws.getCell(addr), text, { horizontal: "left" });
+      for (const [addr, text] of Object.entries(minusLabels)) setText(ws.getCell(addr), text, { horizontal: "left" });
+      setFormula(ws.getCell("C23"), "SUM(C6:C22)", 0);
+      setFormula(ws.getCell("G23"), "SUM(G6:G22)", 0);
+
+      const salesTotal = rows.reduce((sum, row) => sum + toNumber(row.salesTotal), 0);
+      setText(ws.getCell("A24"), "本期開立發票金額");
+      setNumber(ws.getCell("C24"), salesTotal);
+      setText(ws.getCell("E24"), "元  +  加項金額");
+      setFormula(ws.getCell("G24"), "C23", 0);
+      setText(ws.getCell("I24"), "元");
+      setText(ws.getCell("K24"), "營業收入");
+      setFormula(ws.getCell("L24"), "G25", salesTotal);
+      setText(ws.getCell("A25"), "－ 減項金額");
+      setFormula(ws.getCell("C25"), "G23", 0);
+      setText(ws.getCell("E25"), "元  =  營業收入總額");
+      setFormula(ws.getCell("G25"), "C24+G24-C25", salesTotal);
+      setText(ws.getCell("I25"), "元");
+      setText(ws.getCell("K25"), "帳列營業收入");
+      setFormula(ws.getCell("L25"), "G25", salesTotal);
+      setText(ws.getCell("K28"), "調節後尚差異");
+      setFormula(ws.getCell("L28"), "L24-L25", 0);
+      ["C24", "L25"].forEach((addr) => {
+        ws.getCell(addr).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9FFFF" } };
+      });
+
+      const notes = [
+        "註一：本期預收款開立發票金額，應與本期資產負債表預收款期末餘額核對。",
+        "註二：本期應收未開立發票金額及上期應收本期開立發票金額應查明有無逾期發票未開立。",
+        "註三：加項、減項請依帳列資料及申報書內容核對。",
+        "註四：上項逕調營業金額憑帳證作廢發票收執聯，未保存者應說明。",
+        "註五：上項佣金收入、租金收入、出售下腳廢料、原物料及出售資產，應查明帳列科目及有無計入所得課稅。",
+        "註六：上項代收款開立發票，應保存原始憑證或其影本。",
+        "註七：上項代銷銷貨收入應由雙方書立合約，並保存相關文據。"
+      ];
+      notes.forEach((note, idx) => {
+        const r = 28 + idx;
+        mergeSafe(ws, `A${r}:J${r}`);
+        setText(ws.getCell(`A${r}`), note, { horizontal: "left", size: fontSize });
+      });
+      setText(ws.getCell("B44"), "加：", { horizontal: "left" });
+      setText(ws.getCell("B45"), "減：", { horizontal: "left" });
+
+      styleRange(ws, 1, 1, 45, 12, (cell) => {
+        cell.font = { ...cell.font, name: "標楷體", size: cell.font?.size || fontSize };
+        cell.alignment = { vertical: "middle", horizontal: cell.alignment?.horizontal || "center", wrapText: true };
+      });
+      styleRange(ws, 4, 1, 25, 10, setBorder);
+      styleRange(ws, 24, 11, 28, 12, setBorder);
+      ws.views = [{ showGridLines: false }];
+    }
+
+    async function parseWithBackend(files) {
+      const form = new FormData();
+      for (const file of files) form.append("files", file, file.name);
+      const apiUrl = window.location.protocol === "file:"
+        ? "http://127.0.0.1:8766/api/parse"
+        : new URL("/api/parse", window.location.href).href;
+      const response = await fetch(apiUrl, { method: "POST", body: form });
+      if (!response.ok) throw new Error(`本機解析服務回應 ${response.status}`);
+      const payload = await response.json();
+      const rows = Array.isArray(payload.records) ? payload.records : [];
+      const errors = Array.isArray(payload.errors) ? payload.errors : [];
+      for (const error of errors) {
+        rows.push({
+          fileName: error.fileName || error.file || "PDF",
+          company: "",
+          rocYear: "",
+          startMonth: "",
+          endMonth: "",
+          taxable3: 0,
+          taxable2: 0,
+          zeroDirect: 0,
+          zeroOther: 0,
+          exempt: 0,
+          other: 0,
+          special: 0,
+          salesTotal: 0,
+          salesReturns: 0,
+          inputGross: 0,
+          fixedAsset: 0,
+          inputReturns: 0,
+          fixedAssetReturns: 0,
+          importExempt: 0,
+          status: error.status || error.error || "本機解析失敗"
+        });
+      }
+      if (!rows.length) throw new Error("本機解析服務沒有回傳資料");
+      return rows;
+    }
+
+    async function exportWorkbook() {
+      const rows = sortedRows();
+      const companyName = $("companyName").value.trim() || rows.find((row) => row.company)?.company || "未偵測公司";
+      const rocYear = $("rocYear").value.trim() || rows.find((row) => row.rocYear)?.rocYear || "未偵測年度";
+      const safeName = `${companyName}${rocYear}年AP8及AP8-1`.replace(/[\/:*?"<>|]/g, "_");
+      installSimpleExcelJS();
+      const fontSize = Math.max(8, Math.min(16, Number($("fontSize").value) || 11));
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "401/403 AP8及AP8-1產生器";
+      workbook.created = new Date();
+      workbook.calcProperties.fullCalcOnLoad = true;
+      buildAp8(workbook, rows, companyName, rocYear, fontSize);
+      buildAp81(workbook, rows, companyName, fontSize);
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${safeName}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    $("parseBtn").addEventListener("click", async () => {
+      const files = [...$("pdfFiles").files];
+      if (!files.length) {
+        log("請先選取 PDF 檔。");
+        return;
+      }
+      installSimpleExcelJS();
+      state.processing = true;
+      updateComponentStatus();
+      $("parseState").textContent = "讀取中";
+      log(`開始讀取 ${files.length} 個 PDF...`);
+      try {
+        state.rows = [];
+        renderRows();
+        try {
+          appendLog("使用本機穩定解析服務...");
+          state.rows = await parseWithBackend(files);
+          for (const row of state.rows) appendLog(`完成：${row.fileName}，${row.status}`);
+          renderRows();
+          syncMeta();
+          $("parseState").textContent = "完成";
+          const t = totals();
+          appendLog(`已加總。銷售額合計 ${fmt(t.sales)}；進項憑證金額合計 ${fmt(t.inputGross + t.fixedAsset)}。`);
+          return;
+        } catch (backendError) {
+          appendLog(`本機解析服務未啟用，改用瀏覽器解析：${backendError.message}`);
+        }
+
+        try {
+          await waitForPdfjs();
+        } catch (error) {
+          throw new Error(error.message + "，請改用本機解析服務網址或重新整理頁面後再試。");
+        }
+        if (!window.pdfjsLib || !window.ExcelJS) {
+          const ready = updateComponentStatus();
+          const missing = [];
+          if (!ready.pdf) missing.push("PDF");
+          if (!ready.zip || !ready.excel) missing.push("Excel");
+          throw new Error(`網頁元件尚未載入完成：${missing.join("、")}。`);
+        }
+
+        for (const file of files) {
+          appendLog(`讀取：${file.name}`);
+          try {
+            const extracted = await extractPdfText(file, $("ocrToggle").checked);
+            const row = parseDeclaration(extracted.text, file.name);
+            if (row.status === "OK" && extracted.usedOcr) row.status = "OK（OCR）";
+            state.rows.push(row);
+            appendLog(`完成：${file.name}，${row.status}`);
+          } catch (fileError) {
+            state.rows.push({
+              fileName: file.name,
+              company: "",
+              rocYear: "",
+              startMonth: "",
+              endMonth: "",
+              taxable3: 0,
+              taxable2: 0,
+              zeroDirect: 0,
+              zeroOther: 0,
+              exempt: 0,
+              other: 0,
+              special: 0,
+              salesTotal: 0,
+              salesReturns: 0,
+              inputGross: 0,
+              fixedAsset: 0,
+              inputReturns: 0,
+              fixedAssetReturns: 0,
+              importExempt: 0,
+              status: fileError.message
+            });
+            appendLog(`未完成：${file.name}，${fileError.message}`);
+          }
+          renderRows();
+          syncMeta();
+        }
+        $("parseState").textContent = "完成";
+        const t = totals();
+        appendLog(`已加總。銷售額合計 ${fmt(t.sales)}；進項憑證金額合計 ${fmt(t.inputGross + t.fixedAsset)}。`);
+      } catch (error) {
+        console.error(error);
+        $("parseState").textContent = "發生錯誤";
+        appendLog(`錯誤：${error.message}`);
+      } finally {
+        state.processing = false;
+        updateComponentStatus();
+      }
+    });
+
+    $("clearBtn").addEventListener("click", () => {
+      state.rows = [];
+      $("companyName").value = "";
+      $("rocYear").value = "";
+      $("parseState").textContent = "尚未讀取";
+      renderRows();
+      log("已清除結果，請重新選取 PDF。");
+    });
+
+    $("addRowBtn").addEventListener("click", addManualRow);
+    $("exportBtn").addEventListener("click", exportWorkbook);
+    $("previewAp8Btn").addEventListener("click", () => {
+      state.previewTab = "ap8";
+      renderExcelPreview();
+    });
+    $("previewAp81Btn").addEventListener("click", () => {
+      state.previewTab = "ap81";
+      renderExcelPreview();
+    });
+    $("companyName").addEventListener("input", renderExcelPreview);
+    $("rocYear").addEventListener("input", renderExcelPreview);
+    renderExcelPreview();
+  </script>
+</body>
+</html>

@@ -59,6 +59,20 @@ h1 {
   font-size: 13px;
   white-space: nowrap;
 }
+.header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+a.badge {
+  text-decoration: none;
+}
+a.badge:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .workspace {
   display: grid;
   grid-template-columns: 340px minmax(0, 1fr);
@@ -291,7 +305,10 @@ tr:nth-child(even) td { background: #fafcff; }
       <h1>函證整理工具</h1>
       <p class="subtitle">匯入銀行函證 Excel，整理成存款、借款與其他項目，並輸出彙總工作簿。</p>
     </div>
-    <div class="badge">純瀏覽器處理｜檔案不離開本機</div>
+    <div class="header-actions">
+      <a class="badge" href="ap8.html">AP8/AP8-1 產生器</a>
+      <div class="badge">純瀏覽器處理｜檔案不離開本機</div>
+    </div>
   </header>
 
   <main class="workspace">
