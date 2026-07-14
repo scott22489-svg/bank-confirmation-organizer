@@ -485,6 +485,14 @@ btnParse.addEventListener('click', async () => {
 
 async function readRows(file) {
   const buffer = await file.arrayBuffer();
+  try {
+    return readRowsWithSheetJS(buffer);
+  } catch (err) {
+    return readRowsWithExcelJS(buffer);
+  }
+}
+
+function readRowsWithSheetJS(buffer) {
   const wb = XLSX.read(new Uint8Array(buffer), { type: 'array', cellDates: true, raw: false });
   const allRows = [];
   for (const sheetName of wb.SheetNames) {
@@ -493,6 +501,38 @@ async function readRows(file) {
     rows.forEach((row, idx) => allRows.push({ sheet: sheetName, index: idx + 1, cells: row.map(clean) }));
   }
   return allRows;
+}
+
+async function readRowsWithExcelJS(buffer) {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buffer);
+  const allRows = [];
+  wb.worksheets.forEach(ws => {
+    const maxCol = ws.columnCount || ws.actualColumnCount || 0;
+    for (let rowNo = 1; rowNo <= ws.rowCount; rowNo++) {
+      const row = ws.getRow(rowNo);
+      const cells = [];
+      for (let col = 1; col <= maxCol; col++) {
+        cells.push(clean(cellValueToText(row.getCell(col).value)));
+      }
+      allRows.push({ sheet: ws.name, index: rowNo, cells });
+    }
+  });
+  return allRows;
+}
+
+function cellValueToText(value) {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) {
+    return `${value.getFullYear()}/${String(value.getMonth() + 1).padStart(2, '0')}/${String(value.getDate()).padStart(2, '0')}`;
+  }
+  if (typeof value === 'object') {
+    if ('result' in value) return cellValueToText(value.result);
+    if (Array.isArray(value.richText)) return value.richText.map(part => part.text || '').join('');
+    if ('text' in value) return value.text;
+    return value.toString ? value.toString() : JSON.stringify(value);
+  }
+  return value;
 }
 
 function parseRows(rows, fileName, target) {
