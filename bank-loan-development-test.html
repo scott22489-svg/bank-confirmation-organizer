@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; worker-src 'none'">
-<title>銀行借款開發測試｜函證整理工具</title>
+<title>銀行函證整理工具</title>
 <style>
 :root {
   --ink: #172033;
@@ -41,6 +41,20 @@ h1 {
   margin: 0;
   font-size: 30px;
   letter-spacing: 0;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.brand-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  background: #fff;
+  flex: 0 0 auto;
 }
 .subtitle {
   margin: 8px 0 0;
@@ -276,6 +290,7 @@ tr:nth-child(even) td { background: #fafcff; }
 @media (max-width: 560px) {
   .shell { width: min(100vw - 18px, 1440px); }
   h1 { font-size: 24px; }
+  .brand-avatar { width: 44px; height: 44px; }
   .summary { grid-template-columns: 1fr; }
   .actions { grid-template-columns: 1fr; }
   .success { grid-column: auto; }
@@ -288,8 +303,11 @@ tr:nth-child(even) td { background: #fafcff; }
 <div class="shell">
   <header>
     <div>
-      <h1>銀行借款開發測試</h1>
-      <p class="subtitle">此檔案為銀行借款辨識與借款底稿 Excel 產出測試版；原銀行存款正式版不受影響。</p>
+      <div class="brand">
+        <img class="brand-avatar" src="assets/accountant-avatar.png" alt="會計師先生頭像">
+        <h1>銀行函證整理工具</h1>
+      </div>
+      <p class="subtitle">此檔案支援銀行存款、銀行借款與其他項目 Excel 底稿整理；純瀏覽器處理，檔案不離開本機。</p>
     </div>
     <div class="badge">測試版｜其他項目章節補抓版｜純瀏覽器處理｜檔案不離開本機</div>
   </header>
