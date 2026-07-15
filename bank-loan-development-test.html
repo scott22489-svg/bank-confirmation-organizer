@@ -620,7 +620,7 @@ function parseRows(rows, fileName, target) {
     const mapped = mapHeaders(table.headers);
     if (section === 'deposit') parseDetailRows(table.rows, mapped, meta, fileName, target.deposits, 'deposit', table.headerRow);
     else if (section === 'loan') parseDetailRows(table.rows, mapped, meta, fileName, target.loans, 'loan', table.headerRow);
-    else parseDetailRows(table.rows, mapped, meta, fileName, target.other, 'other', table.headerRow);
+    else parseDetailRows(table.rows, mapped, meta, fileName, target.other, 'other', table.headerRow, { sectionTitle: table.title, headers: table.headers });
     target.logs.push({
       file: fileName,
       type: sectionName(section),
@@ -812,7 +812,7 @@ function parseNumberedOtherSections(rows, meta, fileName, bucket) {
       const rowHasText = rows[j].cells.some(cell => clean(cell));
       if (!rowHasText) break;
       if (/^\d+\./.test(first)) break;
-      parseDetailRows([rows[j].cells], mapped, meta, fileName, bucket, 'other', rows[j].index);
+      parseDetailRows([rows[j].cells], mapped, meta, fileName, bucket, 'other', rows[j].index, { sectionTitle: title, headers: rows[headerIndex].cells });
     }
     added += bucket.length - before;
   }
@@ -839,12 +839,14 @@ function mapHeaders(headers) {
   return map;
 }
 
-function parseDetailRows(rows, map, meta, fileName, bucket, type, baseRowNo = 0) {
+function parseDetailRows(rows, map, meta, fileName, bucket, type, baseRowNo = 0, context = {}) {
   rows.forEach((row, rowIndex) => {
     const rowText = row.join(' ');
     if (!rowText || /合計|總計|小計/.test(rowText)) return;
     if (type === 'other') {
       if (!hasMaterialOtherRow(row, map)) return;
+      const rawHeaders = normalizeOtherHeaders(context.headers || []);
+      const rawValues = normalizeOtherValues(row, rawHeaders);
       const amt = resolveAmount(row, map, type);
       const kind = clean(row[map.kind]) || '其他項目';
       const account = clean(row[map.account]) || findLikelyOtherIdentifier(row, map) || kind;
@@ -858,6 +860,9 @@ function parseDetailRows(rows, map, meta, fileName, bucket, type, baseRowNo = 0)
         companyId: meta.companyId,
         companyName: meta.companyName,
         bank,
+        sectionTitle: normalizeOtherSectionTitle(context.sectionTitle || '10.其他項目'),
+        rawHeaders,
+        rawValues,
         kind,
         account,
         quantity: clean(row[map.quantity]) || '',
@@ -1287,23 +1292,25 @@ function addOtherItemsSheet(workbook, otherItems) {
   const rows = otherItems
     .filter(isDisclosableOtherItem)
     .slice()
-    .sort((a, b) => (a.sourceOrder ?? 0) - (b.sourceOrder ?? 0) || (a.rowOrder ?? 0) - (b.rowOrder ?? 0));
+    .sort((a, b) => otherSectionOrder(a.sectionTitle) - otherSectionOrder(b.sectionTitle) || (a.sourceOrder ?? 0) - (b.sourceOrder ?? 0) || (a.rowOrder ?? 0) - (b.rowOrder ?? 0));
   if (!rows.length) return;
 
   const ws = workbook.addWorksheet('其他項目');
   ws.views = [{ showGridLines: false }];
   ws.pageSetup = { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
   ws.columns = [
-    { width: 24 }, { width: 18 }, { width: 42 }, { width: 14 }, { width: 16 }, { width: 58 }
+    { width: 24 }, { width: 18 }, { width: 42 }, { width: 14 }, { width: 16 }, { width: 58 },
+    { width: 24 }, { width: 24 }, { width: 24 }, { width: 24 }, { width: 24 }, { width: 24 }
   ];
 
-  const headers = ['銀行別', '項目', '名稱', '數量', '金額', '其他必要說明事項'];
   let rowNo = 1;
   groupOtherItems(rows).forEach((group, groupIndex) => {
     if (groupIndex > 0) rowNo += 2;
-    ws.mergeCells(rowNo, 1, rowNo, headers.length);
+    const headers = buildOtherSectionHeaders(group.items);
+    const colCount = Math.max(headers.length, 1);
+    ws.mergeCells(rowNo, 1, rowNo, colCount);
     const titleCell = ws.getCell(rowNo, 1);
-    titleCell.value = '10.其他項目';
+    titleCell.value = `${group.title}:`;
     titleCell.font = { name: '微軟正黑體', size: 12, bold: true };
     titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEAF2FF' } };
     titleCell.alignment = { horizontal: 'left', vertical: 'middle' };
@@ -1313,36 +1320,100 @@ function addOtherItemsSheet(workbook, otherItems) {
 
     setRowValues(ws, rowNo, headers);
     ws.getRow(rowNo).height = 22;
-    for (let col = 1; col <= headers.length; col++) styleOtherHeaderCell(ws.getCell(rowNo, col));
+    for (let col = 1; col <= colCount; col++) styleOtherHeaderCell(ws.getCell(rowNo, col));
     rowNo++;
 
     group.items.forEach(item => {
-      setRowValues(ws, rowNo, [
-        simplifyBankName(item.bank || group.bank || ''),
-        item.kind || '',
-        item.account ? `\u200b${item.account}` : '',
-        item.quantity || '',
-        typeof item.amount === 'number' ? item.amount : '',
-        buildOtherItemNote(item)
-      ]);
-      styleOtherDataRow(ws, rowNo);
+      setRowValues(ws, rowNo, buildOtherSectionValues(item, headers));
+      styleOtherDataRow(ws, rowNo, colCount);
       rowNo++;
     });
   });
 }
 
+const OTHER_SECTION_TITLES = {
+  3: '3.應收帳款承購',
+  4: '4.已開立信用狀(未使用餘額)',
+  5: '5.承兌',
+  6: '6.保證',
+  7: '7.衍生工具',
+  8: '8.黃金存摺',
+  9: '9.過去12個月內（與財報查核期間相同）註銷之帳戶資訊',
+  10: '10.其他項目'
+};
+
+function normalizeOtherSectionTitle(title) {
+  const text = clean(title);
+  const numMatch = text.match(/^([3-9]|10)[\.、．]\s*(.+)$/);
+  if (numMatch) {
+    const num = Number(numMatch[1]);
+    return OTHER_SECTION_TITLES[num] || `${num}.${clean(numMatch[2])}`;
+  }
+  if (/應收帳款承購/.test(text)) return OTHER_SECTION_TITLES[3];
+  if (/信用狀/.test(text)) return OTHER_SECTION_TITLES[4];
+  if (/承兌/.test(text)) return OTHER_SECTION_TITLES[5];
+  if (/保證/.test(text)) return OTHER_SECTION_TITLES[6];
+  if (/衍生/.test(text)) return OTHER_SECTION_TITLES[7];
+  if (/黃金存摺/.test(text)) return OTHER_SECTION_TITLES[8];
+  if (/註銷之帳戶|注销之帐户|過去12個月|过去12个月/.test(text)) return OTHER_SECTION_TITLES[9];
+  return OTHER_SECTION_TITLES[10];
+}
+
+function otherSectionOrder(title) {
+  const match = clean(title).match(/^([3-9]|10)[\.、．]/);
+  return match ? Number(match[1]) : 99;
+}
+
+function normalizeOtherHeaders(headers) {
+  const cleaned = headers.map(clean);
+  let last = cleaned.length - 1;
+  while (last >= 0 && !cleaned[last]) last--;
+  return cleaned.slice(0, last + 1);
+}
+
+function normalizeOtherValues(row, headers) {
+  let last = row.length - 1;
+  while (last >= 0 && !clean(row[last])) last--;
+  const width = Math.max(headers.length, last + 1);
+  return row.slice(0, width).map(clean);
+}
+
 function groupOtherItems(rows) {
   const groups = [];
   rows.forEach(item => {
-    const key = `${item.source || ''}|${item.bank || ''}`;
+    const title = normalizeOtherSectionTitle(item.sectionTitle);
+    const key = `${otherSectionOrder(title)}|${title}|${item.source || ''}|${item.bank || ''}`;
     let group = groups.find(entry => entry.key === key);
     if (!group) {
-      group = { key, bank: item.bank || '', items: [] };
+      group = { key, title, bank: item.bank || '', items: [] };
       groups.push(group);
     }
     group.items.push(item);
   });
-  return groups;
+  return groups.sort((a, b) => otherSectionOrder(a.title) - otherSectionOrder(b.title));
+}
+
+function buildOtherSectionHeaders(items) {
+  const firstHeaders = items.map(item => item.rawHeaders || []).find(headers => headers.length) || ['項目', '名稱', '數量', '金額', '其他必要說明事項'];
+  const headers = firstHeaders.slice();
+  const maxWidth = Math.max(headers.length, ...items.map(item => (item.rawValues || []).length));
+  while (headers.length < maxWidth) headers.push(`欄位${headers.length + 1}`);
+  const hasBankHeader = headers.some(header => /銀行|金融機構/.test(header));
+  return hasBankHeader ? headers : ['銀行別', ...headers];
+}
+
+function buildOtherSectionValues(item, headers) {
+  const rawHeaders = item.rawHeaders || [];
+  const rawValues = (item.rawValues || []).slice();
+  const hasBankHeader = rawHeaders.some(header => /銀行|金融機構/.test(header));
+  const values = hasBankHeader ? rawValues : [simplifyBankName(item.bank || ''), ...rawValues];
+  while (values.length < headers.length) values.push('');
+  return values.slice(0, headers.length).map(value => maybePreserveText(value));
+}
+
+function maybePreserveText(value) {
+  const text = clean(value);
+  return /^\d{6,}$/.test(text) ? `\u200b${text}` : text;
 }
 
 function isDisclosableOtherItem(item) {
@@ -1356,14 +1427,6 @@ function isDisclosableOtherItem(item) {
     item.currency
   ].map(value => clean(value));
   return details.some(value => value && !isEmptyMarker(value) && value !== '0');
-}
-
-function buildOtherItemNote(item) {
-  const note = item.note || '';
-  if (item.currency && item.currency !== 'TWD' && !note.includes(item.currency)) {
-    return note ? `${note}；幣別為${item.currency}` : `幣別為${item.currency}`;
-  }
-  return note;
 }
 
 function simplifyBankName(name) {
@@ -1500,21 +1563,19 @@ function styleOtherHeaderCell(cell) {
   cell.border = makeBorder('thin', 'thin', 'thin', 'thin');
 }
 
-function styleOtherDataRow(ws, rowNo) {
+function styleOtherDataRow(ws, rowNo, colCount = 6) {
   const row = ws.getRow(rowNo);
   row.height = 30;
-  for (let col = 1; col <= 6; col++) {
+  for (let col = 1; col <= colCount; col++) {
     const cell = ws.getCell(rowNo, col);
     cell.font = { name: '微軟正黑體', size: 11 };
-    cell.alignment = { horizontal: col === 5 ? 'right' : 'left', vertical: 'middle', wrapText: true };
+    cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
     cell.border = makeBorder('thin', 'thin', 'thin', 'thin');
     if (rowNo % 2 === 1) {
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF7FBFF' } };
     }
   }
   ws.getCell(rowNo, 1).alignment = { horizontal: 'center', vertical: 'middle' };
-  ws.getCell(rowNo, 4).alignment = { horizontal: 'right', vertical: 'middle' };
-  ws.getCell(rowNo, 5).numFmt = '#,##0.00_);\\(#,##0.00\\)';
 }
 
 function styleDepositTotalRow(ws, rowNo) {
